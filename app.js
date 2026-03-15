@@ -61,6 +61,7 @@ let currentFile = null;
 let currentBase64 = null;
 let currentMimeType = null;
 let conversationHistory = [];
+let themeClickCount = 0; // Easter egg counter
 
 // Conversation Mode State
 let isConversationMode = false;
@@ -142,7 +143,38 @@ themeToggle.addEventListener('click', () => {
   localStorage.setItem('sophist_theme', isLight ? 'light' : 'dark');
   sunIcon.classList.toggle('hidden');
   moonIcon.classList.toggle('hidden');
+
+  // Easter Egg Logic
+  themeClickCount++;
+  if (themeClickCount === 20) {
+    triggerEasterEgg();
+    themeClickCount = 0;
+  }
 });
+
+function triggerEasterEgg() {
+  const h1 = document.querySelector('.header h1');
+  const originalText = h1.textContent;
+  h1.textContent = "REALITY WARP";
+  document.body.style.transition = "all 0.1s";
+  
+  const colors = ['#ff4d6d', '#3b82f6', '#10b981', '#f59e0b', '#6366f1'];
+  let i = 0;
+  const interval = setInterval(() => {
+    document.body.style.filter = `hue-rotate(${i * 72}deg) invert(0.2)`;
+    h1.style.transform = `scale(${1 + Math.random() * 0.2}) rotate(${Math.random() * 5 - 2.5}deg)`;
+    i++;
+  }, 100);
+
+  setTimeout(() => {
+    clearInterval(interval);
+    document.body.style.filter = "none";
+    document.body.style.transition = "all 0.5s";
+    h1.textContent = originalText;
+    h1.style.transform = "none";
+    alert("Sophist: 당신은 진실의 균열을 발견했습니다. 현실을 비틀 준비가 되셨습니까?");
+  }, 3000);
+}
 
 // --- Mode Toggle Logic ---
 if (modeToggle) {
