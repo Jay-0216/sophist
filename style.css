@@ -513,7 +513,20 @@ input[type="file"] {
 .primary-btn.small {
   padding: 0.85rem;
   font-size: 1rem;
+  margin-top: 0;
+  flex: 1;
+}
+
+.continuation-actions {
+  display: flex;
+  gap: 1rem;
   margin-top: 1rem;
+}
+
+.secondary-btn.small {
+  margin-top: 0;
+  padding: 0.85rem 1.5rem;
+  font-size: 1rem;
 }
 
 @keyframes flowUp {

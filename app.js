@@ -35,6 +35,7 @@ const moonIcon = document.getElementById('moon-icon');
 const continuationArea = document.getElementById('continuation-area');
 const followUpInput = document.getElementById('follow-up-input');
 const submitBtnFollow = document.getElementById('submit-btn-follow');
+const stopBtnFollow = document.getElementById('stop-btn-follow');
 const sttBtnFollow = document.getElementById('stt-btn-follow');
 
 // --- Mode Toggle Elements ---
@@ -68,7 +69,7 @@ let easterEggInterval = null;
 // Conversation Mode State
 let isConversationMode = false;
 let isSpeaking = false;
-let isWebcamOn = true;
+let isWebcamOn = false; // 기본 카메라 끄기
 let mediaStream = null;
 let activeUtterance = null;
 let sttTimer = null;
@@ -243,6 +244,8 @@ toggleWebcamBtn.addEventListener('click', () => {
     toggleWebcamBtn.innerText = "카메라 켜기";
   }
 });
+// 초기 상태 반영
+if (!isWebcamOn) toggleWebcamBtn.innerText = "카메라 켜기";
 
 function captureWebcamFrame() {
   if (!isWebcamOn || !mediaStream) return null;
@@ -380,6 +383,7 @@ function speakText(textToRead) {
     
     activeUtterance.onstart = () => {
       isSpeaking = true;
+      if (stopBtnFollow) stopBtnFollow.classList.remove('hidden');
       if (isConversationMode) {
         liveStatusText.innerText = "Sophist가 이야기 중...";
         liveStatusText.style.color = "var(--accent)";
@@ -388,6 +392,7 @@ function speakText(textToRead) {
 
     activeUtterance.onend = () => {
       isSpeaking = false;
+      if (stopBtnFollow) stopBtnFollow.classList.add('hidden');
       if (isConversationMode) {
         lastTranscript = "";
         liveUserTranscript.innerText = "";
@@ -612,6 +617,13 @@ clearHistoryBtn.addEventListener('click', () => {
 });
 submitBtn.addEventListener('click', () => callGemini('primary'));
 if (submitBtnFollow) submitBtnFollow.addEventListener('click', () => callGemini('followup'));
+if (stopBtnFollow) {
+  stopBtnFollow.addEventListener('click', () => {
+    window.speechSynthesis.cancel();
+    isSpeaking = false;
+    stopBtnFollow.classList.add('hidden');
+  });
+}
 copyBtn.addEventListener('click', () => { navigator.clipboard.writeText(aiResponse.innerText); });
 if (ttsBtn) {
   ttsBtn.addEventListener('click', () => { 
