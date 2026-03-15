@@ -466,7 +466,10 @@ async function callGemini(mode = 'primary', overrideInput = null) {
         contents: [...conversationHistory, { role: "user", parts: userParts }],
         systemInstruction: { parts: [{ text: getSystemInstruction(tone) }] },
         tools: [{ googleSearch: {} }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 8192 }
+        generationConfig: { 
+          temperature: 0.9, 
+          maxOutputTokens: isEasterEggActive ? 16384 : 8192 
+        }
       })
     });
 
@@ -571,7 +574,17 @@ function getSystemInstruction(tone) {
   };
 
   const tones = isSupportMode ? tonesSupport : tonesCriticize;
-  return `${base}\n\n${tones[tone] || tones['critical']}`;
+
+  let finalInstruction = `${base}\n\n${tones[tone] || tones['critical']}`;
+
+  if (isEasterEggActive) {
+    finalInstruction += `\n\n!!!!! REALITY WARP ACTIVE !!!!!
+지금부터 당신은 평소보다 5배 이상 길고 상세하며, 아주 장황하게 답변을 작성해야 합니다. 
+모든 논리적 요소를 하나하나 분해하여 설명하고, 철학적 사유와 방대한 지식을 동원하여 독자가 읽다가 지칠 정도로 상세하게 주장을 펼치십시오. 
+문장은 매우 유려하고 길어야 하며, 한 마디로 끝낼 것도 열 마디로 늘려서 설명하십시오.`;
+  }
+
+  return finalInstruction;
 }
 
 mediaUpload.addEventListener('change', (e) => {
