@@ -62,6 +62,8 @@ let currentBase64 = null;
 let currentMimeType = null;
 let conversationHistory = [];
 let themeClickCount = 0; // Easter egg counter
+let isEasterEggActive = false;
+let easterEggInterval = null;
 
 // Conversation Mode State
 let isConversationMode = false;
@@ -154,26 +156,31 @@ themeToggle.addEventListener('click', () => {
 
 function triggerEasterEgg() {
   const h1 = document.querySelector('.header h1');
-  const originalText = h1.textContent;
-  h1.textContent = "REALITY WARP";
-  document.body.style.transition = "all 0.1s";
+  const originalText = "Sophist"; 
   
-  const colors = ['#ff4d6d', '#3b82f6', '#10b981', '#f59e0b', '#6366f1'];
-  let i = 0;
-  const interval = setInterval(() => {
-    document.body.style.filter = `hue-rotate(${i * 72}deg) invert(0.2)`;
-    h1.style.transform = `scale(${1 + Math.random() * 0.2}) rotate(${Math.random() * 5 - 2.5}deg)`;
-    i++;
-  }, 100);
-
-  setTimeout(() => {
-    clearInterval(interval);
+  if (!isEasterEggActive) {
+    // Turn ON
+    isEasterEggActive = true;
+    h1.textContent = "REALITY WARP";
+    document.body.style.transition = "all 0.1s";
+    
+    let i = 0;
+    easterEggInterval = setInterval(() => {
+      document.body.style.filter = `hue-rotate(${i * 72}deg) invert(0.2)`;
+      h1.style.transform = `scale(${1 + Math.random() * 0.1}) rotate(${Math.random() * 4 - 2}deg)`;
+      i++;
+    }, 150);
+    alert("Sophist: 현실 왜곡 모드가 활성화되었습니다. 진실이 뒤섞입니다.");
+  } else {
+    // Turn OFF
+    isEasterEggActive = false;
+    clearInterval(easterEggInterval);
     document.body.style.filter = "none";
     document.body.style.transition = "all 0.5s";
     h1.textContent = originalText;
     h1.style.transform = "none";
-    alert("Sophist: 당신은 진실의 균열을 발견했습니다. 현실을 비틀 준비가 되셨습니까?");
-  }, 3000);
+    alert("Sophist: 현실이 복구되었습니다. 다시 차가운 논리의 세계로 돌아갑니다.");
+  }
 }
 
 // --- Mode Toggle Logic ---
