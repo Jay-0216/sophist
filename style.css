@@ -187,9 +187,7 @@ body.light-mode .glass-btn:hover {
   gap: 1rem;
 }
 
-.theme-btn {
-  /* Aligned naturally in flex container */
-}
+
 
 .header h1 {
   font-size: 3rem;
