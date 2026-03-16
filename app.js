@@ -12,6 +12,25 @@ const submitBtn = document.getElementById('submit-btn');
 const submitBtnText = document.getElementById('submit-btn-text');
 const spinner = document.getElementById('spinner');
 
+// Auth & Sidebar Elements
+const authHeaderBtn = document.getElementById('auth-header-btn');
+const authModal = document.getElementById('auth-modal');
+const closeAuthBtn = document.getElementById('close-auth-btn');
+const authForm = document.getElementById('auth-form');
+const authEmail = document.getElementById('auth-email');
+const authPassword = document.getElementById('auth-password');
+const authError = document.getElementById('auth-error');
+const authSubmitBtn = document.getElementById('auth-submit-btn');
+const authToggleBtn = document.getElementById('auth-toggle-btn');
+const authTitle = document.getElementById('auth-title');
+
+const historySidebar = document.getElementById('history-sidebar');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+const historyList = document.getElementById('history-list');
+const logoutBtn = document.getElementById('logout-btn');
+const saveHistoryBtn = document.getElementById('save-history-btn');
+
 const errorMsg = document.getElementById('error-message');
 const outputPanel = document.getElementById('output-panel');
 const aiResponse = document.getElementById('ai-response');
@@ -36,6 +55,7 @@ const continuationArea = document.getElementById('continuation-area');
 const followUpInput = document.getElementById('follow-up-input');
 const submitBtnFollow = document.getElementById('submit-btn-follow');
 const stopBtnFollow = document.getElementById('stop-btn-follow');
+const resetBtnFollow = document.getElementById('reset-btn-follow');
 const sttBtnFollow = document.getElementById('stt-btn-follow');
 
 // --- Mode Toggle Elements ---
@@ -97,6 +117,82 @@ function simpleDecrypt(encoded) {
   } catch (e) { return ""; }
 }
 
+// --- Firebase Initialization & Auth state ---
+import { initializeApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+
+// Firebase configuration from USER
+const firebaseConfig = {
+  apiKey: "AIzaSyD50eEVzAZkawrSO31JRhTRJNugvRQVfLo",
+  authDomain: "sophist-c1b46.firebaseapp.com",
+  projectId: "sophist-c1b46",
+  storageBucket: "sophist-c1b46.firebasestorage.app",
+  messagingSenderId: "415584180941",
+  appId: "1:415584180941:web:291857a1baf7001139a784",
+  measurementId: "G-1E26NKST42"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let currentUser = null;
+let isRegisterMode = false;
+let currentLoadedHistoryId = null;
+
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user;
+  if (user) {
+    authHeaderBtn.textContent = '마이페이지';
+    authModal.classList.add('hidden');
+    saveHistoryBtn.classList.remove('hidden');
+    await loadUserData(user.uid);
+    loadHistories();
+  } else {
+    authHeaderBtn.textContent = '로그인';
+    saveHistoryBtn.classList.add('hidden');
+    // Clear user data
+    apiKeyInput.value = '';
+    saveApiKeyCheck.checked = false;
+    currentLoadedHistoryId = null;
+    historyList.innerHTML = '<p class="empty-state">저장된 기록이 없습니다.</p>';
+  }
+});
+
+async function loadUserData(uid) {
+  try {
+    const docRef = doc(db, "users", uid);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data.encryptedApiKey) {
+        apiKeyInput.value = simpleDecrypt(data.encryptedApiKey);
+        saveApiKeyCheck.checked = true;
+      }
+      if (data.model) modelSelect.value = data.model;
+      if (data.tone) toneSelect.value = data.tone;
+    }
+  } catch (e) { console.error("Error loading user data:", e); }
+}
+
+async function saveUserData(uid) {
+  if (!uid) return;
+  const dataToSave = {
+    model: modelSelect.value,
+    tone: toneSelect.value
+  };
+  if (saveApiKeyCheck.checked && apiKeyInput.value) {
+    dataToSave.encryptedApiKey = simpleEncrypt(apiKeyInput.value);
+  } else {
+    dataToSave.encryptedApiKey = "";
+  }
+  
+  try {
+    await setDoc(doc(db, "users", uid), dataToSave, { merge: true });
+  } catch (e) { console.error("Error saving user data:", e); }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const savedEncryptedKey = localStorage.getItem(STORAGE_KEY);
   if (savedEncryptedKey) {
@@ -132,12 +228,209 @@ async function requestInitialPermissions() {
 }
 
 apiKeyInput.addEventListener('input', () => {
-  if (saveApiKeyCheck.checked) localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
+  if (saveApiKeyCheck.checked) {
+    if (currentUser) saveUserData(currentUser.uid);
+    else localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
+  }
 });
 
 saveApiKeyCheck.addEventListener('change', () => {
-  if (saveApiKeyCheck.checked) localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
-  else localStorage.removeItem(STORAGE_KEY);
+  if (currentUser) {
+    saveUserData(currentUser.uid);
+  } else {
+    if (saveApiKeyCheck.checked) localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
+    else localStorage.removeItem(STORAGE_KEY);
+  }
+});
+
+modelSelect.addEventListener('change', () => { if (currentUser) saveUserData(currentUser.uid); });
+toneSelect.addEventListener('change', () => { if (currentUser) saveUserData(currentUser.uid); });
+
+// --- Auth UI Logic ---
+authHeaderBtn.addEventListener('click', () => {
+  if (currentUser) {
+    historySidebar.classList.remove('hidden');
+    sidebarOverlay.classList.remove('hidden');
+  } else {
+    authModal.classList.remove('hidden');
+  }
+});
+
+closeAuthBtn.addEventListener('click', () => authModal.classList.add('hidden'));
+
+function handleAuthToggle(e) {
+  e.preventDefault();
+  isRegisterMode = !isRegisterMode;
+  authTitle.textContent = isRegisterMode ? '회원가입' : '로그인';
+  authSubmitBtn.textContent = isRegisterMode ? '회원가입' : '로그인';
+  authError.classList.add('hidden');
+  document.getElementById('auth-toggle-text').innerHTML = isRegisterMode ? 
+    '이미 계정이 있으신가요? <a href="#" id="auth-toggle-btn">로그인</a>' : 
+    '계정이 없으신가요? <a href="#" id="auth-toggle-btn">회원가입</a>';
+  
+  // Rebind toggler
+  document.getElementById('auth-toggle-btn').addEventListener('click', handleAuthToggle);
+}
+
+authToggleBtn.addEventListener('click', handleAuthToggle);
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  authError.classList.add('hidden');
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  
+  authSubmitBtn.disabled = true;
+  try {
+    if (isRegisterMode) {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+    }
+    // Form succeeds, onAuthStateChanged takes over
+    authForm.reset();
+  } catch (error) {
+    authError.textContent = "오류: " + error.message;
+    authError.classList.remove('hidden');
+  } finally {
+    authSubmitBtn.disabled = false;
+  }
+});
+
+closeSidebarBtn.addEventListener('click', () => {
+  historySidebar.classList.add('hidden');
+  sidebarOverlay.classList.add('hidden');
+});
+
+sidebarOverlay.addEventListener('click', () => {
+  historySidebar.classList.add('hidden');
+  sidebarOverlay.classList.add('hidden');
+});
+
+logoutBtn.addEventListener('click', () => {
+  signOut(auth);
+  historySidebar.classList.add('hidden');
+  sidebarOverlay.classList.add('hidden');
+});
+
+// --- History Logic ---
+
+async function loadHistories() {
+  if (!currentUser) return;
+  try {
+    const historyCol = collection(db, "users", currentUser.uid, "histories");
+    const qSnapshot = await getDocs(historyCol);
+    historyList.innerHTML = '';
+    
+    if (qSnapshot.empty) {
+      historyList.innerHTML = '<p class="empty-state">저장된 기록이 없습니다.</p>';
+      return;
+    }
+    
+    // Convert to array and sort by date desc
+    const histories = qSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    histories.sort((a, b) => b.savedAt?.toMillis() - a.savedAt?.toMillis() || 0);
+    
+    histories.forEach(hist => {
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      
+      const dateStr = hist.savedAt ? new Date(hist.savedAt.toDate()).toLocaleString() : '최근';
+      const titleStr = hist.title || '이름 없는 대화';
+      
+      div.innerHTML = `
+        <div class="history-date">${dateStr}</div>
+        <div class="history-title">${titleStr}</div>
+      `;
+      
+      div.addEventListener('click', () => resumeHistory(hist));
+      historyList.appendChild(div);
+    });
+    
+  } catch (e) {
+    console.error("Error loading histories", e);
+  }
+}
+
+async function resumeHistory(hist) {
+  if (!hist || !hist.messages) return;
+  currentLoadedHistoryId = hist.id;
+  conversationHistory = hist.messages;
+  
+  // Close sidebar
+  historySidebar.classList.add('hidden');
+  sidebarOverlay.classList.add('hidden');
+  
+  // Render full history
+  let fullHtml = '';
+  // Usually history starts with USER -> AI -> USER -> AI
+  let index = 0;
+  while (index < conversationHistory.length) {
+    const userMsg = conversationHistory[index];
+    const aiMsg = conversationHistory[index+1];
+    
+    if (userMsg && userMsg.role === 'user') {
+      fullHtml += `**나:** ${userMsg.parts[0].text}\n\n`;
+    }
+    if (aiMsg && aiMsg.role === 'model') {
+      fullHtml += `**Sophist:** ${aiMsg.parts[0].text}\n\n`;
+      fullHtml += `<hr>`;
+    }
+    index += 2;
+  }
+  
+  aiResponse.innerHTML = marked.parse(fullHtml);
+  
+  // Update UI to show Continuation mode
+  settingsPanel.classList.add('hidden');
+  inputPanel.classList.add('hidden');
+  convControls.classList.add('hidden');
+  
+  outputPanel.classList.remove('hidden');
+  continuationArea.classList.remove('hidden');
+  
+  saveHistoryBtn.innerText = '현재 상태 클라우드에 업데이트';
+  saveHistoryBtn.disabled = false;
+  
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+saveHistoryBtn.addEventListener('click', async () => {
+  if (!currentUser) {
+    alert("로그인이 필요합니다.");
+    return;
+  }
+  if (conversationHistory.length < 2) return;
+  
+  saveHistoryBtn.innerText = '저장 중...';
+  saveHistoryBtn.disabled = true;
+  
+  try {
+    const title = conversationHistory[0].parts[0].text.substring(0, 30) + "...";
+    
+    if (currentLoadedHistoryId) {
+      // Update existing
+      const docRef = doc(db, "users", currentUser.uid, "histories", currentLoadedHistoryId);
+      await setDoc(docRef, { messages: conversationHistory, savedAt: serverTimestamp(), title }, { merge: true });
+    } else {
+      // Create new
+      const colRef = collection(db, "users", currentUser.uid, "histories");
+      const newDoc = await addDoc(colRef, { messages: conversationHistory, savedAt: serverTimestamp(), title });
+      currentLoadedHistoryId = newDoc.id;
+    }
+    
+    saveHistoryBtn.innerText = '저장 완료!';
+    setTimeout(() => saveHistoryBtn.innerText = '현재 상태 클라우드에 업데이트', 2000);
+    
+    // Refresh sidebar silently
+    loadHistories();
+    
+  } catch (e) {
+    console.error("Error saving history:", e);
+    alert("저장에 실패했습니다.");
+    saveHistoryBtn.innerText = '클라우드에 저장 (이어서 반박 가능)';
+    saveHistoryBtn.disabled = false;
+  }
 });
 
 // --- Theme Toggle ---
@@ -383,6 +676,7 @@ function speakText(textToRead) {
     
     activeUtterance.onstart = () => {
       isSpeaking = true;
+      if (ttsBtn) ttsBtn.classList.add('tts-speaking');
       if (stopBtnFollow) stopBtnFollow.classList.remove('hidden');
       if (isConversationMode) {
         liveStatusText.innerText = "Sophist가 이야기 중...";
@@ -392,6 +686,7 @@ function speakText(textToRead) {
 
     activeUtterance.onend = () => {
       isSpeaking = false;
+      if (ttsBtn) ttsBtn.classList.remove('tts-speaking');
       if (stopBtnFollow) stopBtnFollow.classList.add('hidden');
       if (isConversationMode) {
         lastTranscript = "";
@@ -491,6 +786,16 @@ async function callGemini(mode = 'primary', overrideInput = null) {
         liveAiResponse.innerText = responseText;
         speakText(responseText);
       } else {
+        // Build Markdown content correctly representing history context when displaying
+        let displayHtml = '';
+        if (mode === 'primary') {
+             displayHtml = marked.parse(responseText);
+        } else {
+             // Append to existing HTML or parse full history to show continuity
+             const latestExchange = `**나:** ${input}\n\n**Sophist:** ${responseText}`;
+             displayHtml = aiResponse.innerHTML + '<hr>' + marked.parse(latestExchange);
+        }
+
         // UI Transition Logic: Hide top panels on FIRST primary response
         if (mode === 'primary') {
              settingsPanel.classList.add('hidden');
@@ -498,7 +803,7 @@ async function callGemini(mode = 'primary', overrideInput = null) {
              convControls.classList.add('hidden');
         }
 
-        aiResponse.innerHTML = marked.parse(responseText);
+        aiResponse.innerHTML = displayHtml;
         outputPanel.classList.remove('hidden');
         if (continuationArea) continuationArea.classList.remove('hidden');
         
@@ -617,6 +922,39 @@ clearHistoryBtn.addEventListener('click', () => {
 });
 submitBtn.addEventListener('click', () => callGemini('primary'));
 if (submitBtnFollow) submitBtnFollow.addEventListener('click', () => callGemini('followup'));
+if (resetBtnFollow) {
+  resetBtnFollow.addEventListener('click', () => {
+    window.speechSynthesis.cancel();
+    isSpeaking = false;
+    isRequesting = false;
+    if (stopBtnFollow) stopBtnFollow.classList.add('hidden');
+    conversationHistory = [];
+    
+      // ... your reset UI code untouched
+    
+    // Reset loaded history state
+    currentLoadedHistoryId = null;
+    saveHistoryBtn.innerText = '클라우드에 저장 (이어서 반박 가능)';
+    saveHistoryBtn.disabled = false;
+    
+    // Hide Follow-up / Output arrays
+    outputPanel.classList.add('hidden');
+    if (continuationArea) continuationArea.classList.add('hidden');
+    
+    // Show Main Settings and Input arrays
+    settingsPanel.classList.remove('hidden');
+    inputPanel.classList.remove('hidden');
+    convControls.classList.remove('hidden');
+    
+    // Clear Outputs & Inputs
+    aiResponse.innerHTML = '';
+    followUpInput.value = '';
+    opponentInput.value = '';
+    
+    // Scroll to Top Smoothly
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
 if (stopBtnFollow) {
   stopBtnFollow.addEventListener('click', () => {
     window.speechSynthesis.cancel();

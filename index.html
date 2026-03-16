@@ -14,7 +14,10 @@
   <script type="importmap">
     {
       "imports": {
-        "@google/genai": "https://esm.run/@google/genai"
+        "@google/genai": "https://esm.run/@google/genai",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
       }
     }
   </script>
@@ -31,24 +34,27 @@
     <header class="glass-panel header">
       <div class="header-top">
         <h1>Sophist</h1>
-        <button id="theme-toggle" class="icon-btn theme-btn" title="테마 변경">
-          <svg id="sun-icon" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-            stroke-width="2">
-            <circle cx="12" cy="12" r="5"></circle>
-            <line x1="12" y1="1" x2="12" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="23"></line>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-            <line x1="1" y1="12" x2="3" y2="12"></line>
-            <line x1="21" y1="12" x2="23" y2="12"></line>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-          </svg>
-          <svg id="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-            stroke-width="2">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-          </svg>
-        </button>
+        <div class="header-actions">
+          <button id="auth-header-btn" class="glass-btn small-btn">로그인</button>
+          <button id="theme-toggle" class="icon-btn theme-btn" title="테마 변경">
+            <svg id="sun-icon" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+              stroke-width="2">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg id="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+              stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+        </div>
       </div>
       <p>당신의 논리적 대변인</p>
     </header>
@@ -173,19 +179,36 @@
       <div class="output-header">
         <h2 id="output-panel-title">Sophist의 반박</h2>
         <button id="tts-btn" class="icon-btn" title="답변 읽어주기">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+          <svg id="tts-icon-play" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
             <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
             <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <svg id="tts-icon-stop" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none">
+            <rect x="6" y="6" width="12" height="12"></rect>
           </svg>
         </button>
       </div>
       <div id="ai-response" class="response-content">
         <!-- AI 응답이 여기에 렌더링 됩니다 -->
       </div>
-      <div class="output-actions">
-        <button id="copy-btn" class="secondary-btn">복사하기</button>
+      <div class="action-bar" style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+        <div>
+          <button id="save-history-btn" class="text-btn hidden">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg> 클라우드에 저장 (이어서 반박 가능)
+          </button>
+        </div>
+        <button id="copy-btn" class="text-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg> 복사하기
+        </button>
       </div>
 
       <!-- 이어서 반박하기 전용 입력창 -->
@@ -208,7 +231,7 @@
             <span>이어서 반박 생성</span>
             <div class="loader hidden"></div>
           </button>
-          <button id="stop-btn-follow" class="secondary-btn small hidden">읽기 중지</button>
+          <button id="reset-btn-follow" class="secondary-btn small" title="대화 초기화 및 메인으로">초기화</button>
         </div>
       </div>
     </section>
@@ -247,6 +270,47 @@
       </div>
     </div>
   </div>
+
+  <!-- Auth Modal -->
+  <div id="auth-modal" class="modal hidden">
+    <div class="modal-content glass-panel">
+      <div class="modal-header">
+        <h2 id="auth-title">로그인</h2>
+        <button id="close-auth-btn" class="icon-btn">&times;</button>
+      </div>
+      <form id="auth-form">
+        <div class="setting-group">
+          <label>이메일</label>
+          <input type="email" id="auth-email" required placeholder="example@email.com">
+        </div>
+        <div class="setting-group">
+          <label>비밀번호</label>
+          <input type="password" id="auth-password" required placeholder="비밀번호 입력">
+        </div>
+        <p id="auth-error" class="error-msg hidden"></p>
+        <button type="submit" id="auth-submit-btn" class="primary-btn">로그인</button>
+      </form>
+      <div class="auth-toggle-link">
+        <span id="auth-toggle-text">계정이 없으신가요? <a href="#" id="auth-toggle-btn">회원가입</a></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Sidebar -->
+  <div id="history-sidebar" class="sidebar hidden">
+    <div class="sidebar-header">
+      <h2>내 대화 기록</h2>
+      <button id="close-sidebar-btn" class="icon-btn">&times;</button>
+    </div>
+    <div class="sidebar-content">
+      <div id="history-list" class="history-list">
+        <!-- History items will be injected here -->
+        <p class="empty-state">저장된 기록이 없습니다.</p>
+      </div>
+      <button id="logout-btn" class="secondary-btn logout-btn">로그아웃</button>
+    </div>
+  </div>
+  <div id="sidebar-overlay" class="hidden"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
