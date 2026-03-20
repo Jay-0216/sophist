@@ -95,7 +95,13 @@ let activeUtterance = null;
 let sttTimer = null;
 let lastTranscript = "";
 let isRequesting = false; 
-const SPEECH_RECOGNITION_SENSITIVITY = 1800;
+const SPEECH_RECOGNITION_SENSITIVITY = 1000; // 1초 침묵 시 자동 종료
+let currentAbortController = null; // For stopping generation
+let currentAiSpeechText = ""; // To prevent echo self-interruption
+
+import { initializeApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, serverTimestamp, runTransaction, query, orderBy, limit } from "firebase/firestore";
 
 // --- API Key Security Logic ---
 const STORAGE_KEY = 'sophist_encrypted_api_key';
@@ -117,11 +123,6 @@ function simpleDecrypt(encoded) {
   } catch (e) { return ""; }
 }
 
-// --- Firebase Initialization & Auth state ---
-import { initializeApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
-
 // Firebase configuration from USER
 const firebaseConfig = {
   apiKey: "AIzaSyD50eEVzAZkawrSO31JRhTRJNugvRQVfLo",
@@ -140,24 +141,45 @@ const db = getFirestore(app);
 let currentUser = null;
 let isRegisterMode = false;
 let currentLoadedHistoryId = null;
+let initialAuthChecked = false;
 
 onAuthStateChanged(auth, async (user) => {
+  const wasLoggedIn = !!currentUser;
   currentUser = user;
+  
   if (user) {
     authHeaderBtn.textContent = '마이페이지';
     authModal.classList.add('hidden');
     saveHistoryBtn.classList.remove('hidden');
+    document.getElementById('sidebar-email').textContent = user.email;
+    document.getElementById('user-profile-sidebar').classList.remove('hidden');
     await loadUserData(user.uid);
     loadHistories();
   } else {
     authHeaderBtn.textContent = '로그인';
     saveHistoryBtn.classList.add('hidden');
-    // Clear user data
-    apiKeyInput.value = '';
-    saveApiKeyCheck.checked = false;
-    currentLoadedHistoryId = null;
-    historyList.innerHTML = '<p class="empty-state">저장된 기록이 없습니다.</p>';
+    document.getElementById('sidebar-nickname').textContent = '게스트';
+    document.getElementById('sidebar-email').textContent = '로그인이 필요합니다';
+    document.getElementById('user-profile-sidebar').classList.add('hidden');
+    
+    // Only clear if this was a literal logout action, 
+    // NOT on initial load when user is just a guest.
+    if (wasLoggedIn) {
+      apiKeyInput.value = '';
+      saveApiKeyCheck.checked = false;
+      localStorage.removeItem(STORAGE_KEY);
+      currentLoadedHistoryId = null;
+      historyList.innerHTML = '<p class="empty-state">저장된 기록이 없습니다.</p>';
+    } else if (!initialAuthChecked) {
+      // First time check and no user? Load from localStorage as fallback
+      const savedEncryptedKey = localStorage.getItem(STORAGE_KEY);
+      if (savedEncryptedKey) {
+        apiKeyInput.value = simpleDecrypt(savedEncryptedKey);
+        saveApiKeyCheck.checked = true;
+      }
+    }
   }
+  initialAuthChecked = true;
 });
 
 async function loadUserData(uid) {
@@ -172,6 +194,11 @@ async function loadUserData(uid) {
       }
       if (data.model) modelSelect.value = data.model;
       if (data.tone) toneSelect.value = data.tone;
+      if (data.nickname) {
+        document.getElementById('sidebar-nickname').textContent = data.nickname;
+      } else {
+        document.getElementById('sidebar-nickname').textContent = '사용자';
+      }
     }
   } catch (e) { console.error("Error loading user data:", e); }
 }
@@ -227,18 +254,28 @@ async function requestInitialPermissions() {
   }
 }
 
-apiKeyInput.addEventListener('input', () => {
-  if (saveApiKeyCheck.checked) {
-    if (currentUser) saveUserData(currentUser.uid);
-    else localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
-  }
-});
+// Debounce helper
+let apiKeySaveTimer = null;
+function debouncedSaveApiKey() {
+  clearTimeout(apiKeySaveTimer);
+  apiKeySaveTimer = setTimeout(() => {
+    if (saveApiKeyCheck.checked) {
+      if (currentUser) saveUserData(currentUser.uid);
+      else if (apiKeyInput.value) localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
+    }
+  }, 800); // 0.8초 후 자동 저장
+}
+
+apiKeyInput.addEventListener('input', debouncedSaveApiKey);
 
 saveApiKeyCheck.addEventListener('change', () => {
-  if (currentUser) {
-    saveUserData(currentUser.uid);
+  if (saveApiKeyCheck.checked) {
+    // Save immediately when user turns on the checkbox
+    if (currentUser) saveUserData(currentUser.uid);
+    else if (apiKeyInput.value) localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
   } else {
-    if (saveApiKeyCheck.checked) localStorage.setItem(STORAGE_KEY, simpleEncrypt(apiKeyInput.value));
+    // Clear when turned off
+    if (currentUser) saveUserData(currentUser.uid); // saves empty key
     else localStorage.removeItem(STORAGE_KEY);
   }
 });
@@ -258,12 +295,24 @@ authHeaderBtn.addEventListener('click', () => {
 
 closeAuthBtn.addEventListener('click', () => authModal.classList.add('hidden'));
 
+const nicknameGroup = document.getElementById('nickname-group');
+const authNicknameInput = document.getElementById('auth-nickname');
+
 function handleAuthToggle(e) {
   e.preventDefault();
   isRegisterMode = !isRegisterMode;
   authTitle.textContent = isRegisterMode ? '회원가입' : '로그인';
   authSubmitBtn.textContent = isRegisterMode ? '회원가입' : '로그인';
   authError.classList.add('hidden');
+  
+  if (isRegisterMode) {
+    nicknameGroup.classList.remove('hidden');
+    authNicknameInput.required = true;
+  } else {
+    nicknameGroup.classList.add('hidden');
+    authNicknameInput.required = false;
+  }
+  
   document.getElementById('auth-toggle-text').innerHTML = isRegisterMode ? 
     '이미 계정이 있으신가요? <a href="#" id="auth-toggle-btn">로그인</a>' : 
     '계정이 없으신가요? <a href="#" id="auth-toggle-btn">회원가입</a>';
@@ -283,7 +332,11 @@ authForm.addEventListener('submit', async (e) => {
   authSubmitBtn.disabled = true;
   try {
     if (isRegisterMode) {
-      await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // Save nickname to user doc
+      await setDoc(doc(db, "users", userCredential.user.uid), {
+        nickname: authNicknameInput.value.trim() || '익명논쟁가',
+      }, { merge: true });
     } else {
       await signInWithEmailAndPassword(auth, email, password);
     }
@@ -451,28 +504,44 @@ themeToggle.addEventListener('click', () => {
 function triggerEasterEgg() {
   const h1 = document.querySelector('.header h1');
   const originalText = "Sophist"; 
+  const orbs = document.querySelectorAll('.orb');
   
   if (!isEasterEggActive) {
     // Turn ON
     isEasterEggActive = true;
     h1.textContent = "REALITY WARP";
-    document.body.style.transition = "all 0.1s";
+    document.documentElement.style.transition = "filter 0.1s";
     
+    const rainbowColors = [
+      ['#ff0080', '#ff00ff', '#8000ff'],
+      ['#ff6600', '#ff0000', '#ff00aa'],
+      ['#00ff80', '#00ffff', '#0080ff'],
+      ['#ffff00', '#ff8800', '#ff0000'],
+      ['#aa00ff', '#0000ff', '#00aaff'],
+    ];
     let i = 0;
     easterEggInterval = setInterval(() => {
-      document.body.style.filter = `hue-rotate(${i * 72}deg) invert(0.2)`;
-      h1.style.transform = `scale(${1 + Math.random() * 0.1}) rotate(${Math.random() * 4 - 2}deg)`;
+      const palette = rainbowColors[i % rainbowColors.length];
+      orbs[0] && (orbs[0].style.background = palette[0]);
+      orbs[1] && (orbs[1].style.background = palette[1]);
+      orbs[2] && (orbs[2].style.background = palette[2]);
+      document.documentElement.style.filter = `hue-rotate(${i * 60}deg) saturate(2) brightness(1.05)`;
+      h1.style.transform = `scale(${1 + Math.random() * 0.12}) rotate(${Math.random() * 6 - 3}deg)`;
+      h1.style.textShadow = `0 0 20px ${palette[0]}, 0 0 40px ${palette[1]}`;
       i++;
-    }, 150);
+    }, 120);
     alert("Sophist: 현실 왜곡 모드가 활성화되었습니다. 진실이 뒤섞입니다.");
   } else {
     // Turn OFF
     isEasterEggActive = false;
     clearInterval(easterEggInterval);
+    document.documentElement.style.filter = "none";
+    document.documentElement.style.transition = "";
     document.body.style.filter = "none";
-    document.body.style.transition = "all 0.5s";
+    orbs.forEach(o => o.style.background = '');
     h1.textContent = originalText;
     h1.style.transform = "none";
+    h1.style.textShadow = "none";
     alert("Sophist: 현실이 복구되었습니다. 다시 차가운 논리의 세계로 돌아갑니다.");
   }
 }
@@ -588,11 +657,20 @@ if (SpeechRecognition) {
     const text = finalTranscript || interimTranscript;
 
     if (isConversationMode) {
-      // If user starts speaking while AI is speaking, interrupt AI
+      // Echo cancellation heuristic:
+      // If AI is speaking, check if the recognized text is part of AI's current speech
       if (isSpeaking && text.trim().length > 0) {
+        const cleanText = text.trim().replace(/[.,!?:;]/g, "");
+        const cleanAi = currentAiSpeechText.replace(/[.,!?:;]/g, "");
+        if (cleanAi.includes(cleanText) || cleanText.length < 2) {
+          // Likely echo or too short, ignore
+          return;
+        }
+        
+        // If we reach here, it's likely a real user interruption
         window.speechSynthesis.cancel();
         isSpeaking = false;
-        isRequesting = false; // Reset request state to allow new generation
+        isRequesting = false;
       }
 
       lastTranscript = text;
@@ -661,6 +739,7 @@ if (followUpInput) {
 // --- AI Voice (Google 한국어 Neural 우선) ---
 function speakText(textToRead) {
   window.speechSynthesis.cancel();
+  currentAiSpeechText = textToRead; 
   
   // Use global activeUtterance to prevent garbage collection halting the speech in Chrome
   activeUtterance = new SpeechSynthesisUtterance(textToRead);
@@ -737,88 +816,24 @@ async function processConversationInput(text) {
 convModeBtn.addEventListener('click', startConversationMode);
 convStopBtnLive.addEventListener('click', stopConversationMode);
 
-// --- Gemini API Implementation ---
-async function callGemini(mode = 'primary', overrideInput = null) {
-  const apiKey = apiKeyInput.value.trim();
-  const targetInputEle = mode === 'primary' ? opponentInput : followUpInput;
-  const input = overrideInput || (targetInputEle ? targetInputEle.value.trim() : "");
-  const modelName = modelSelect.value;
-  const tone = toneSelect.value;
-
-  if (!apiKey || (!input && !currentBase64)) return;
-
-  if (!isConversationMode) setLoading(true, mode);
-  window.speechSynthesis.cancel();
-
-  try {
-    const userParts = [{ text: input || "이 상황을 평가해줘." }];
-    if (isConversationMode && isWebcamOn) {
-      const frame = captureWebcamFrame();
-      if (frame) userParts.push({ inline_data: { mime_type: "image/jpeg", data: frame } });
-    } else if (currentBase64) {
-      userParts.push({ inline_data: { mime_type: currentMimeType, data: currentBase64 } });
-    }
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [...conversationHistory, { role: "user", parts: userParts }],
-        systemInstruction: { parts: [{ text: getSystemInstruction(tone) }] },
-        tools: [{ googleSearch: {} }],
-        generationConfig: { 
-          temperature: 0.9, 
-          maxOutputTokens: isEasterEggActive ? 16384 : 8192 
-        }
-      })
-    });
-
-    const data = await response.json();
-    if (data.candidates && data.candidates[0].content) {
-      const aiContent = data.candidates[0].content;
-      conversationHistory.push({ role: "user", parts: userParts });
-      conversationHistory.push(aiContent);
-      
-      const responseText = aiContent.parts[0].text;
-      
-      if (isConversationMode) {
-        // Show full response instead of truncating
-        liveAiResponse.innerText = responseText;
-        speakText(responseText);
-      } else {
-        // Build Markdown content correctly representing history context when displaying
-        let displayHtml = '';
-        if (mode === 'primary') {
-             displayHtml = marked.parse(responseText);
-        } else {
-             // Append to existing HTML or parse full history to show continuity
-             const latestExchange = `**나:** ${input}\n\n**Sophist:** ${responseText}`;
-             displayHtml = aiResponse.innerHTML + '<hr>' + marked.parse(latestExchange);
-        }
-
-        // UI Transition Logic: Hide top panels on FIRST primary response
-        if (mode === 'primary') {
-             settingsPanel.classList.add('hidden');
-             inputPanel.classList.add('hidden');
-             convControls.classList.add('hidden');
-        }
-
-        aiResponse.innerHTML = displayHtml;
-        outputPanel.classList.remove('hidden');
-        if (continuationArea) continuationArea.classList.remove('hidden');
-        
-        // Clear input field after successful generation
-        targetInputEle.value = '';
-        
-        // Scroll smoothly to output
-        setTimeout(() => {
-          outputPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
-      }
-    }
-  } catch (err) { showError(err.message); }
-  finally { if (!isConversationMode) setLoading(false, mode); }
+function showError(msg) { 
+  const errorModal = document.getElementById('error-modal');
+  const errorMsgText = document.getElementById('error-modal-message');
+  if (errorModal && errorMsgText) {
+    errorMsgText.textContent = msg;
+    errorModal.classList.remove('hidden');
+  } else {
+    alert(msg);
+  }
 }
+
+// Close error modal handlers
+document.getElementById('close-error-modal-btn')?.addEventListener('click', () => {
+  document.getElementById('error-modal').classList.add('hidden');
+});
+document.getElementById('error-ok-btn')?.addEventListener('click', () => {
+  document.getElementById('error-modal').classList.add('hidden');
+});
 
 function setLoading(isLoading, mode) {
   const targetBtn = mode === 'primary' ? submitBtn : submitBtnFollow;
@@ -828,15 +843,6 @@ function setLoading(isLoading, mode) {
   const loader = targetBtn.querySelector('.loader');
   if (span) span.classList.toggle('hidden', isLoading);
   if (loader) loader.classList.toggle('hidden', !isLoading);
-}
-
-function showError(msg) { 
-  if (errorMsg) {
-    errorMsg.textContent = msg; 
-    errorMsg.classList.remove('hidden'); 
-  } else {
-    alert(msg);
-  }
 }
 
 function getSystemInstruction(tone) {
@@ -959,7 +965,39 @@ if (stopBtnFollow) {
   stopBtnFollow.addEventListener('click', () => {
     window.speechSynthesis.cancel();
     isSpeaking = false;
+    if (ttsBtn) ttsBtn.classList.remove('tts-speaking');
     stopBtnFollow.classList.add('hidden');
+  });
+}
+
+// Enter key support for main inputs
+opponentInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitBtn.click();
+  }
+});
+
+if (followUpInput) {
+  followUpInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitBtnFollow.click();
+    }
+  });
+}
+
+// Stop generation button
+const stopGenerationBtn = document.getElementById('stop-generation-btn');
+if (stopGenerationBtn) {
+  stopGenerationBtn.addEventListener('click', () => {
+    if (currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
+    stopGenerationBtn.classList.add('hidden');
+    setLoading(false, 'primary');
+    setLoading(false, 'followup');
   });
 }
 copyBtn.addEventListener('click', () => { navigator.clipboard.writeText(aiResponse.innerText); });
@@ -973,4 +1011,568 @@ if (ttsBtn) {
     const text = aiResponse.innerText; 
     if (text) speakText(text); 
   });
+}
+
+// ==========================================
+// NEW FEATURES LOGIC
+// ==========================================
+
+// 1. Download Feature
+const downloadBtn = document.getElementById('download-btn');
+if (downloadBtn) {
+  downloadBtn.addEventListener('click', () => {
+    let content = `Sophist 논쟁 기록\n\n`;
+    const texts = [];
+    document.querySelectorAll('.response-content p, .response-content h1, .response-content h2, .response-content h3').forEach(el => {
+      texts.push(el.innerText);
+    });
+    if (texts.length === 0) content += aiResponse.innerText;
+    else content += texts.join("\n\n");
+    
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sophist_debate_${new Date().getTime()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+// 2. Leaderboard & Usage Tracking
+
+async function updateDailyUsage(uid) {
+  if (!uid) return;
+  const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+  const docRef = doc(db, "users", uid);
+  try {
+    await runTransaction(db, async (transaction) => {
+      const sfDoc = await transaction.get(docRef);
+      if (!sfDoc.exists()) return;
+      
+      const data = sfDoc.data();
+      let currentCount = 0;
+      if (data.lastUsageDate === today) {
+        currentCount = data.dailyUsageCount || 0;
+      }
+      
+      transaction.update(docRef, {
+        dailyUsageCount: currentCount + 1,
+        lastUsageDate: today
+      });
+    });
+  } catch (e) {
+    console.error("Usage update failed:", e);
+  }
+}
+
+const leaderboardBtn = document.getElementById('leaderboard-btn');
+const leaderboardModal = document.getElementById('leaderboard-modal');
+const closeLeaderboardBtn = document.getElementById('close-leaderboard-btn');
+const leaderboardList = document.getElementById('leaderboard-list');
+
+if (leaderboardBtn) {
+  leaderboardBtn.addEventListener('click', async () => {
+    leaderboardModal.classList.remove('hidden');
+    leaderboardList.innerHTML = '<p class="empty-state">데이터 로딩 중...</p>';
+    
+    // Fetch top users
+    const today = new Date().toISOString().split('T')[0];
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, orderBy("dailyUsageCount", "desc"), limit(10));
+    
+    try {
+      const qSnapshot = await getDocs(q);
+      leaderboardList.innerHTML = '';
+      if (qSnapshot.empty) {
+        leaderboardList.innerHTML = '<p class="empty-state">아직 순위가 없습니다.</p>';
+        return;
+      }
+      
+      let rank = 1;
+      qSnapshot.forEach((d) => {
+        const user = d.data();
+        // Only show if used today
+        if (user.lastUsageDate === today && user.dailyUsageCount > 0) {
+          let rankClass = rank <= 3 ? `rank-${rank}` : '';
+          const name = user.nickname || '익명논쟁가';
+          leaderboardList.innerHTML += `
+            <div class="leaderboard-item">
+              <div style="display:flex; align-items:center; gap:1rem;">
+                <div class="rank-badge ${rankClass}">${rank}</div>
+                <div style="font-weight:bold;">${name}</div>
+              </div>
+              <div>${user.dailyUsageCount}회</div>
+            </div>`;
+          rank++;
+        }
+      });
+      if (rank === 1) {
+        leaderboardList.innerHTML = '<p class="empty-state">오늘 논쟁을 완료한 사람이 없습니다.</p>';
+      }
+    } catch (e) {
+      leaderboardList.innerHTML = '<p class="empty-state error-text">데이터를 불러오지 못했습니다.</p>';
+      console.error(e);
+    }
+  });
+  closeLeaderboardBtn.addEventListener('click', () => leaderboardModal.classList.add('hidden'));
+}
+
+
+// 3. Theme Customizer
+const themeCustomizerBtn = document.getElementById('theme-customizer-btn');
+const themeCustomizerModal = document.getElementById('theme-customizer-modal');
+const closeThemeCustomizerBtn = document.getElementById('close-theme-customizer-btn');
+const customAccent = document.getElementById('custom-accent-color');
+const customBg1 = document.getElementById('custom-bg1-color');
+const customBg2 = document.getElementById('custom-bg2-color');
+
+const modalThemeWhite = document.getElementById('modal-theme-white');
+const modalThemeDark = document.getElementById('modal-theme-dark');
+
+function updateThemeModeUI(isLight) {
+  if (isLight) {
+    modalThemeWhite.classList.add('active');
+    modalThemeDark.classList.remove('active');
+    document.body.classList.add('light-mode');
+    sunIcon.classList.remove('hidden');
+    moonIcon.classList.add('hidden');
+  } else {
+    modalThemeWhite.classList.remove('active');
+    modalThemeDark.classList.add('active');
+    document.body.classList.remove('light-mode');
+    sunIcon.classList.add('hidden');
+    moonIcon.classList.remove('hidden');
+  }
+  localStorage.setItem('sophist_theme', isLight ? 'light' : 'dark');
+}
+
+modalThemeWhite?.addEventListener('click', () => updateThemeModeUI(true));
+modalThemeDark?.addEventListener('click', () => updateThemeModeUI(false));
+
+function applyThemeColors(accent, bg1, bg2) {
+  document.documentElement.style.setProperty('--accent', accent);
+  document.documentElement.style.setProperty('--bg-gradient', `linear-gradient(135deg, ${bg1} 0%, ${bg2} 100%)`);
+  
+  // Sync to inputs and text values
+  if (customAccent) {
+    customAccent.value = accent;
+    const valText = customAccent.parentElement?.querySelector('.color-value');
+    if (valText) valText.textContent = accent;
+  }
+  if (customBg1) {
+    customBg1.value = bg1;
+    const valText = customBg1.parentElement?.querySelector('.color-value');
+    if (valText) valText.textContent = bg1;
+  }
+  if (customBg2) {
+    customBg2.value = bg2;
+    const valText = customBg2.parentElement?.querySelector('.color-value');
+    if (valText) valText.textContent = bg2;
+  }
+  
+  // Save to localStorage
+  localStorage.setItem('sophist_custom_theme', JSON.stringify({ accent, bg1, bg2 }));
+}
+
+// Initial Theme Mode Load
+if (localStorage.getItem('sophist_theme') === 'light') {
+  updateThemeModeUI(true);
+}
+
+// Initial Custom Color Load
+const savedColors = localStorage.getItem('sophist_custom_theme');
+if (savedColors) {
+  const { accent, bg1, bg2 } = JSON.parse(savedColors);
+  applyThemeColors(accent, bg1, bg2);
+}
+
+if (themeCustomizerBtn) {
+  themeCustomizerBtn.addEventListener('click', () => themeCustomizerModal.classList.remove('hidden'));
+  closeThemeCustomizerBtn.addEventListener('click', () => themeCustomizerModal.classList.add('hidden'));
+  
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const a = btn.dataset.accent;
+      const b1 = btn.dataset.bg1;
+      const b2 = btn.dataset.bg2;
+      applyThemeColors(a, b1, b2);
+    });
+  });
+  
+  // Real-time updates for color inputs
+  [customAccent, customBg1, customBg2].forEach(input => {
+    input?.addEventListener('input', () => {
+      applyThemeColors(customAccent.value, customBg1.value, customBg2.value);
+    });
+  });
+}
+
+// 3.5 Guest API Key Flow
+const guestApiModal = document.getElementById('guest-api-modal');
+const closeGuestApiBtn = document.getElementById('close-guest-api-btn');
+const guestApiYesBtn = document.getElementById('guest-api-yes-btn');
+const guestApiNoBtn = document.getElementById('guest-api-no-btn');
+const guestApiInputArea = document.getElementById('guest-api-input-area');
+const guestApiKeyInput = document.getElementById('guest-api-key-input');
+const guestApiSaveBtn = document.getElementById('guest-api-save-btn');
+
+function checkApiKeyAndPrompt() {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey && !currentUser) {
+    guestApiModal.classList.remove('hidden');
+    guestApiInputArea.classList.add('hidden');
+    return false;
+  }
+  return true;
+}
+
+guestApiYesBtn?.addEventListener('click', () => {
+  guestApiInputArea.classList.remove('hidden');
+});
+
+guestApiNoBtn?.addEventListener('click', () => {
+  guestApiModal.classList.add('hidden');
+});
+
+closeGuestApiBtn?.addEventListener('click', () => {
+  guestApiModal.classList.add('hidden');
+});
+
+guestApiSaveBtn?.addEventListener('click', () => {
+  const newKey = guestApiKeyInput.value.trim();
+  if (newKey) {
+    apiKeyInput.value = newKey;
+    saveApiKeyCheck.checked = true;
+    debouncedSaveApiKey();
+    guestApiModal.classList.add('hidden');
+    alert("API 키가 적용되었습니다.");
+  }
+});
+
+// Update callGemini to check for API key presence
+async function callGemini(mode = 'primary', overrideInput = null) {
+  const apiKey = apiKeyInput.value.trim();
+  const targetInputEle = mode === 'primary' ? opponentInput : followUpInput;
+  const input = overrideInput || (targetInputEle ? targetInputEle.value.trim() : "");
+  const modelName = modelSelect.value;
+  const tone = toneSelect.value;
+
+  if (!apiKey) {
+    if (!currentUser) {
+       guestApiModal.classList.remove('hidden');
+       guestApiInputArea.classList.add('hidden');
+    } else {
+       showError("API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
+       historySidebar.classList.remove('hidden');
+       sidebarOverlay.classList.remove('hidden');
+    }
+    return;
+  }
+  
+  // Proceed with existing callGemini logic (duplicated here for flow)
+  if (!input && !currentBase64) return;
+  if (!isConversationMode) setLoading(true, mode);
+  window.speechSynthesis.cancel();
+  if (stopGenerationBtn) stopGenerationBtn.classList.remove('hidden');
+  currentAbortController = new AbortController();
+
+  try {
+    const userParts = [{ text: input || "이 상황을 평가해줘." }];
+    if (isConversationMode && isWebcamOn) {
+      const frame = captureWebcamFrame();
+      if (frame) userParts.push({ inline_data: { mime_type: "image/jpeg", data: frame } });
+    } else if (currentBase64) {
+      userParts.push({ inline_data: { mime_type: currentMimeType, data: currentBase64 } });
+    }
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: currentAbortController?.signal,
+      body: JSON.stringify({
+        contents: [...conversationHistory, { role: "user", parts: userParts }],
+        systemInstruction: { parts: [{ text: getSystemInstruction(tone) }] },
+        tools: [{ googleSearch: {} }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: isEasterEggActive ? 16384 : 8192 }
+      })
+    });
+
+    const data = await response.json();
+    
+    // Check for API errors specifically
+    if (data.error) {
+      throw new Error(data.error.message || "API 호출 단계에서 오류가 발생했습니다.");
+    }
+
+    if (data.candidates && data.candidates[0].content) {
+       const aiContent = data.candidates[0].content;
+       conversationHistory.push({ role: "user", parts: userParts });
+       conversationHistory.push(aiContent);
+       const responseText = aiContent.parts[0].text;
+       
+       if (isConversationMode) {
+         liveAiResponse.innerText = responseText;
+         speakText(responseText);
+       } else {
+         let displayHtml = '';
+         if (mode === 'primary') {
+              displayHtml = marked.parse(responseText);
+         } else {
+              const latestExchange = `**나:** ${input}\n\n**Sophist:** ${responseText}`;
+              displayHtml = aiResponse.innerHTML + '<hr>' + marked.parse(latestExchange);
+         }
+         if (mode === 'primary') {
+              settingsPanel.classList.add('hidden');
+              inputPanel.classList.add('hidden');
+              convControls.classList.add('hidden');
+         }
+         aiResponse.innerHTML = displayHtml;
+         outputPanel.classList.remove('hidden');
+         if (continuationArea) continuationArea.classList.remove('hidden');
+         const scoreContainer = document.getElementById('logic-score-container');
+         if (scoreContainer) {
+           const baseScore = isEasterEggActive ? 10 : 60;
+           const score = Math.min(100, Math.max(10, Math.floor(baseScore + Math.random() * 30 + (input.length / 10))));
+           let scoreClass = 'score-mid';
+           let emoji = '😐';
+           if (score >= 85) { scoreClass = 'score-high'; emoji = '🔥'; }
+           else if (score <= 40) { scoreClass = 'score-low'; emoji = '🥶'; }
+           scoreContainer.innerHTML = `<div class="logic-score-badge ${scoreClass}">논리 강도 점수: ${score}점 ${emoji}</div>`;
+           scoreContainer.classList.remove('hidden');
+         }
+         if (currentUser) updateDailyUsage(currentUser.uid);
+         targetInputEle.value = '';
+         setTimeout(() => { outputPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+       }
+    }
+  } catch (err) { 
+    if (err.name !== 'AbortError') showError(err.message); 
+  }
+  finally { 
+    if (!isConversationMode) setLoading(false, mode); 
+    if (stopGenerationBtn) stopGenerationBtn.classList.add('hidden');
+    currentAbortController = null;
+  }
+}
+
+// 4. AI Debate Arena
+const openDebateBtn = document.getElementById('open-debate-btn');
+const debateArena = document.getElementById('debate-arena');
+const closeDebateBtn = document.getElementById('close-debate-btn');
+const startDebateBtn = document.getElementById('start-debate-btn');
+const debateSetup = document.getElementById('debate-setup');
+const debateArenaMain = document.getElementById('debate-arena-main');
+const debateTopicDisplay = document.getElementById('debate-topic-display');
+const debateMessages = document.getElementById('debate-messages');
+const debateHumanInput = document.getElementById('debate-human-input');
+const debateNextBtn = document.getElementById('debate-next-btn');
+const debateConcludeBtn = document.getElementById('debate-conclude-btn');
+const debateStopBtn = document.getElementById('debate-stop-btn');
+const debateConclusion = document.getElementById('debate-conclusion');
+const debateSpinner = document.getElementById('debate-spinner');
+const debateNextText = document.getElementById('debate-next-text');
+
+let debateState = {
+  active: false,
+  topic: "",
+  numBots: 2,
+  maxRounds: 3,
+  currentRound: 1,
+  currentSpeakerIndex: 0,
+  history: [],
+  roles: []
+};
+
+const SOPHIST_PROFILES = [
+  { name: "파라문도 (Paramundo, 극단적 회의주의자)", color: "sophist-A", system: `당신은 모든 것을 의심하는 회의주의 철학자 파라문도입니다. 상대의 주장에 내재된 모순과 논리적 비약을 가장 공격적으로 해체합니다. 절대적 진리는 없다고 믿습니다.` },
+  { name: "세네라 (Senera, 차가운 공리주의자)", color: "sophist-B", system: `당신은 오직 효율성과 비용-편익만을 따지는 공리주의자 세네라입니다. 감정적 호소는 철저히 무시하고 통계와 사회적 효용 가치로 상대를 짓밟습니다.` },
+  { name: "베르토 (Berto, 도덕적 이상주의자)", color: "sophist-C", system: `당신은 인간의 기본권과 도덕적 가치를 최우선으로 여기는 이상주의자 베르토입니다. 기계적 논리와 효율성을 비판하고 인본주의적 관점에서 공격합니다.` },
+  { name: "테스카 (Tesca, 해체주의자)", color: "sophist-D", system: `당신은 언어와 개념 그 자체를 해체하는 테스카입니다. 토론 주제 자체가 성립하지 않거나 단어의 정의가 잘못되었다고 주장하며 담론의 틀을 흔듭니다.` }
+];
+
+if (openDebateBtn) {
+  openDebateBtn.addEventListener('click', () => {
+    debateArena.classList.remove('hidden');
+    debateSetup.classList.remove('hidden');
+    debateArenaMain.classList.add('hidden');
+  });
+  
+  closeDebateBtn.addEventListener('click', () => {
+    debateArena.classList.add('hidden');
+  });
+
+  document.querySelectorAll('.debater-count-btn').forEach(b => {
+    b.addEventListener('click', (e) => {
+      document.querySelectorAll('.debater-count-btn').forEach(btn => btn.classList.remove('active'));
+      e.target.classList.add('active');
+      debateState.numBots = parseInt(e.target.dataset.count);
+    });
+  });
+
+  document.querySelectorAll('.round-count-btn').forEach(b => {
+    b.addEventListener('click', (e) => {
+      document.querySelectorAll('.round-count-btn').forEach(btn => btn.classList.remove('active'));
+      e.target.classList.add('active');
+      debateState.maxRounds = parseInt(e.target.dataset.rounds);
+    });
+  });
+
+  startDebateBtn.addEventListener('click', () => {
+    const topic = document.getElementById('debate-topic').value.trim();
+    if (!topic) return alert("토론 주제를 입력하세요.");
+    if (!apiKeyInput.value) return alert("API 키가 필요합니다.");
+    
+    debateState = {
+      active: true,
+      topic: topic,
+      numBots: parseInt(document.querySelector('.debater-count-btn.active').dataset.count),
+      maxRounds: parseInt(document.querySelector('.round-count-btn.active').dataset.rounds),
+      currentRound: 1,
+      currentSpeakerIndex: 0,
+      history: [],
+      roles: SOPHIST_PROFILES.slice(0, parseInt(document.querySelector('.debater-count-btn.active').dataset.count))
+    };
+
+    debateTopicDisplay.innerText = `주제: "${topic}"`;
+    debateMessages.innerHTML = '';
+    debateHumanInput.value = '';
+    debateConclusion.classList.add('hidden');
+    
+    debateSetup.classList.add('hidden');
+    debateArenaMain.classList.remove('hidden');
+    
+    // First bot starts
+    triggerNextDebateSpeaker();
+  });
+
+  function addDebateMessage(sender, text, colorClass) {
+    debateState.history.push(`${sender}: ${text}`);
+    const div = document.createElement('div');
+    div.className = `debate-msg ${colorClass}`;
+    div.innerHTML = `<span class="debater-name">${sender}</span><div>${marked.parse(text)}</div>`;
+    debateMessages.appendChild(div);
+    debateMessages.lastChild.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  debateNextBtn.addEventListener('click', triggerNextDebateSpeaker);
+  
+  debateStopBtn.addEventListener('click', () => {
+    debateState.active = false;
+    debateArenaMain.classList.add('hidden');
+    debateSetup.classList.remove('hidden');
+  });
+
+  // Enter key support for debate topic
+  const debateTopicInput = document.getElementById('debate-topic');
+  if (debateTopicInput) {
+    debateTopicInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        startDebateBtn.click();
+      }
+    });
+  }
+
+  // Enter key support for human input in debate
+  if (debateHumanInput) {
+    debateHumanInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        debateNextBtn.click();
+      }
+    });
+  }
+
+  debateConcludeBtn.addEventListener('click', async () => {
+    if (!debateState.active || debateState.history.length === 0) return;
+    debateSpinner.classList.remove('hidden');
+    debateNextText.classList.add('hidden');
+    debateNextBtn.disabled = true;
+    debateConcludeBtn.disabled = true;
+    
+    try {
+      const prompt = `다음은 ' ${debateState.topic} ' 주제에 대해 진행된 AI들과 인간의 토론 내용입니다.\n\n[토론 내용]\n${debateState.history.join('\n\n')}\n\n이 토론을 종합적으로 분석하고, 최종적으로 결론을 도출하십시오(중립적인 요약 + 우세한 논리 요약).`;
+      
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelSelect.value}:generateContent?key=${apiKeyInput.value}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 2000 }
+        })
+      });
+      const data = await response.json();
+      const text = data.candidates[0].content.parts[0].text;
+      
+      debateConclusion.innerHTML = `<h3>토론 결론</h3>${marked.parse(text)}`;
+      debateConclusion.classList.remove('hidden');
+      debateState.active = false;
+      debateConclusion.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      alert("결론 도출 실패: " + err.message);
+    } finally {
+      debateSpinner.classList.add('hidden');
+      debateNextText.classList.remove('hidden');
+      debateNextBtn.disabled = false;
+      debateConcludeBtn.disabled = false;
+    }
+  });
+
+  async function triggerNextDebateSpeaker() {
+    if (!debateState.active) return;
+    if (debateState.currentSpeakerIndex >= debateState.numBots) {
+      debateState.currentSpeakerIndex = 0;
+      debateState.currentRound++;
+    }
+    
+    if (debateState.currentRound > debateState.maxRounds) {
+      return alert("모든 토론 라운드가 종료되었습니다. '결론 도출'을 눌러주세요.");
+    }
+
+    const humanText = debateHumanInput.value.trim();
+    if (humanText) {
+      addDebateMessage("개입하는 인간", humanText, "human");
+      debateHumanInput.value = '';
+    }
+
+    const currentRole = debateState.roles[debateState.currentSpeakerIndex];
+    
+    debateSpinner.classList.remove('hidden');
+    debateNextText.classList.add('hidden');
+    debateNextBtn.disabled = true;
+
+    try {
+      let prompt = `[토론 주제]: ${debateState.topic}\n\n[지금까지의 논의]:\n`;
+      if (debateState.history.length === 0) {
+        prompt += "(아직 발언 없음. 주제에 대해 선제 공격을 진행하십시오.)";
+      } else {
+        const recentHistory = debateState.history.slice(-4).join('\n\n');
+        prompt += recentHistory + "\n\n위 직전 발언들의 논리적 허점을 철저히 공격하며 당신의 입장으로 반박하십시오. (인간의 개입이 있었다면 우선 인간의 발언부터 논파하십시오.) 짧게 2~3문단으로 끝내십시오.";
+      }
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelSelect.value}:generateContent?key=${apiKeyInput.value}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          systemInstruction: { parts: [{ text: currentRole.system }] },
+          generationConfig: { temperature: 0.9, maxOutputTokens: 1000 }
+        })
+      });
+
+      const data = await response.json();
+      const aiContent = data.candidates[0].content.parts[0].text;
+      
+      addDebateMessage(currentRole.name, aiContent, currentRole.color);
+      debateState.currentSpeakerIndex++;
+      
+    } catch (e) {
+      alert("발언 생성 오류: " + e.message);
+    } finally {
+      debateSpinner.classList.add('hidden');
+      debateNextText.classList.remove('hidden');
+      debateNextBtn.disabled = false;
+    }
+  }
 }

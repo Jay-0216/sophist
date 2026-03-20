@@ -35,8 +35,14 @@
       <div class="header-top">
         <h1>Sophist</h1>
         <div class="header-actions">
+          <button id="leaderboard-btn" class="icon-btn" title="랜킹">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 20 18 10"/><polyline points="12 20 12 4"/><polyline points="6 20 6 14"/></svg>
+          </button>
+          <button id="theme-customizer-btn" class="icon-btn" title="테마 커스터마이저">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          </button>
           <button id="auth-header-btn" class="glass-btn small-btn">로그인</button>
-          <button id="theme-toggle" class="icon-btn theme-btn" title="테마 변경">
+          <button id="theme-toggle" class="icon-btn" title="테마 변경">
             <svg id="sun-icon" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
               stroke-width="2">
               <circle cx="12" cy="12" r="5"></circle>
@@ -85,30 +91,8 @@
         </select>
       </div>
 
-      <div class="setting-group api-key-group">
-        <div class="label-with-help">
-          <label for="api-key-input">Gemini API 키</label>
-          <button type="button" id="api-help-btn" class="help-circle">?</button>
-        </div>
-        <input type="password" id="api-key-input" placeholder="AI 사용을 위해 API 키를 입력하세요">
-        <div class="save-key-row">
-          <label class="toggle-container small">
-            <input type="checkbox" id="save-api-key">
-            <span class="toggle-text">API 키 기억하기 (암호화되어 저장됨)</span>
-          </label>
-        </div>
+      <!-- API Key group removed from here, moving to settings/sidebar -->
 
-        <div id="api-instructions" class="help-box hidden">
-          <h3>API 키 발급 방법</h3>
-          <ol>
-            <li><a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>에 접속합니다.</li>
-            <li>구글 계정으로 로그인합니다.</li>
-            <li>왼쪽 메뉴에서 <strong>'Get API key'</strong> (또는 API 키)를 누릅니다.</li>
-            <li><strong>'Create API key in new project'</strong> 버튼을 눌러 키를 생성합니다.</li>
-            <li>생성된 API 키를 복사해서 아래 칸에 붙여넣으세요.</li>
-          </ol>
-        </div>
-      </div>
     </section>
 
     <!-- 대화 연동 모드 -->
@@ -193,22 +177,39 @@
       <div id="ai-response" class="response-content">
         <!-- AI 응답이 여기에 렌더링 됩니다 -->
       </div>
-      <div class="action-bar" style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
-        <div>
-          <button id="save-history-btn" class="text-btn hidden">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+      <!-- Logic score badge area (auto added by JS) -->
+      <div id="logic-score-container" class="logic-score-container hidden"></div>
+
+      <!-- Actions Area -->
+      <div class="output-actions">
+        <div class="output-actions-left">
+          <button id="save-history-btn" class="glass-btn small-btn hidden">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
               <polyline points="17 21 17 13 7 13 7 21"></polyline>
               <polyline points="7 3 7 8 15 8"></polyline>
-            </svg> 클라우드에 저장 (이어서 반박 가능)
+            </svg> 클라우드에 저장
+          </button>
+          <button id="download-btn" class="glass-btn small-btn">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg> 다운로드
           </button>
         </div>
-        <button id="copy-btn" class="text-btn">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg> 복사하기
-        </button>
+        <div class="output-actions-right">
+          <button id="stop-generation-btn" class="glass-btn small-btn danger-btn hidden">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            생성 중지
+          </button>
+          <button id="copy-btn" class="glass-btn small-btn">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg> 복사하기
+          </button>
+        </div>
       </div>
 
       <!-- 이어서 반박하기 전용 입력창 -->
@@ -279,6 +280,10 @@
         <button id="close-auth-btn" class="icon-btn">&times;</button>
       </div>
       <form id="auth-form">
+        <div id="nickname-group" class="setting-group hidden">
+          <label>닉네임</label>
+          <input type="text" id="auth-nickname" placeholder="표시될 닉네임 (한글/영문 2-10자)">
+        </div>
         <div class="setting-group">
           <label>이메일</label>
           <input type="email" id="auth-email" required placeholder="example@email.com">
@@ -302,15 +307,208 @@
       <h2>내 대화 기록</h2>
       <button id="close-sidebar-btn" class="icon-btn">&times;</button>
     </div>
+    <div class="user-profile-sidebar" id="user-profile-sidebar">
+      <div class="user-avatar">👤</div>
+      <div class="user-details">
+        <div id="sidebar-nickname" class="nickname-text">사용자</div>
+        <div id="sidebar-email" class="email-text">example@email.com</div>
+      </div>
+    </div>
     <div class="sidebar-content">
       <div id="history-list" class="history-list">
         <!-- History items will be injected here -->
         <p class="empty-state">저장된 기록이 없습니다.</p>
       </div>
-      <button id="logout-btn" class="secondary-btn logout-btn">로그아웃</button>
+
+      <div class="sidebar-settings">
+        <p class="sidebar-section-title">사용자 설정</p>
+        <div class="setting-group api-key-group">
+          <div class="label-with-help">
+            <label for="api-key-input">Gemini API 키</label>
+            <button type="button" id="api-help-btn" class="help-circle">?</button>
+          </div>
+          <input type="password" id="api-key-input" placeholder="성능 향상을 위해 API 키를 입력하세요">
+          <div class="save-key-row">
+            <label class="toggle-container small">
+              <input type="checkbox" id="save-api-key">
+              <span class="toggle-text">API 키 기억하기 (암호화)</span>
+            </label>
+          </div>
+          <div id="api-instructions" class="help-box hidden">
+             <h3>API 키 발급 방법</h3>
+             <ol>
+               <li><a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a> 접속</li>
+               <li>'Get API key' 클릭</li>
+               <li>'Create API key' 클릭 후 복사</li>
+             </ol>
+          </div>
+        </div>
+      </div>
+
+      <button id="logout-btn" class="secondary-btn logout-btn">로그인 정보 초기화 및 로그아웃</button>
     </div>
   </div>
   <div id="sidebar-overlay" class="hidden"></div>
+
+  <!-- Leaderboard Modal -->
+  <div id="leaderboard-modal" class="modal hidden">
+    <div class="modal-content glass-panel leaderboard-modal-content">
+      <div class="modal-header">
+        <h2>🏆 오늘의 논쟁가 랭킹</h2>
+        <button id="close-leaderboard-btn" class="icon-btn">&times;</button>
+      </div>
+      <p class="leaderboard-subtitle">결론을 많이 도출한 상위 논쟁가들</p>
+      <div id="leaderboard-list" class="leaderboard-list">
+        <p class="empty-state">데이터 로딩 중...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Theme Customizer Modal -->
+  <div id="theme-customizer-modal" class="modal hidden">
+    <div class="modal-content glass-panel">
+      <div class="modal-header">
+        <h2>🎨 테마 커스터마이저</h2>
+        <button id="close-theme-customizer-btn" class="icon-btn">&times;</button>
+      </div>
+      <div class="theme-presets">
+        <p class="theme-section-title">프리셋</p>
+        <div class="preset-grid">
+          <button class="preset-btn" data-accent="#ff4d6d" data-bg1="#1e1b4b" data-bg2="#0f172a">🔴 기본 (빨강)</button>
+          <button class="preset-btn" data-accent="#0ea5e9" data-bg1="#0c4a6e" data-bg2="#082f49">🔵 오션</button>
+          <button class="preset-btn" data-accent="#a855f7" data-bg1="#2e1065" data-bg2="#1e0a47">🟣 퍼플</button>
+          <button class="preset-btn" data-accent="#10b981" data-bg1="#064e3b" data-bg2="#022c22">🟢 포레스트</button>
+          <button class="preset-btn" data-accent="#f59e0b" data-bg1="#451a03" data-bg2="#1c0a00">🟠 선셋</button>
+          <button class="preset-btn" data-accent="#ec4899" data-bg1="#500724" data-bg2="#1a0008">🩷 핑크</button>
+        </div>
+      </div>
+      <div class="theme-custom">
+        <p class="theme-section-title">직접 설정</p>
+        <div class="theme-color-row">
+          <label>테마 모드</label>
+          <div class="theme-mode-toggle">
+            <button id="modal-theme-white" class="mode-btn">☀️ 화이트</button>
+            <button id="modal-theme-dark" class="mode-btn active">🌙 다크</button>
+          </div>
+        </div>
+        <div class="theme-color-row color-picker-row">
+          <div class="color-picker-item">
+            <label>강조 (Accent)</label>
+            <div class="color-input-wrapper">
+              <input type="color" id="custom-accent-color" value="#ff4d6d">
+              <span class="color-value">#ff4d6d</span>
+            </div>
+          </div>
+          <div class="color-picker-item">
+            <label>배경 1 (Top)</label>
+            <div class="color-input-wrapper">
+              <input type="color" id="custom-bg1-color" value="#1e1b4b">
+              <span class="color-value">#1e1b4b</span>
+            </div>
+          </div>
+          <div class="color-picker-item">
+            <label>배경 2 (Bottom)</label>
+            <div class="color-input-wrapper">
+              <input type="color" id="custom-bg2-color" value="#0f172a">
+              <span class="color-value">#0f172a</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Debate Arena -->
+  <div id="debate-arena" class="modal hidden">
+    <div class="debate-arena-content glass-panel">
+      <div class="modal-header">
+        <h2>⚔️ AI 토론장</h2>
+        <button id="close-debate-btn" class="icon-btn">&times;</button>
+      </div>
+
+      <!-- Setup Phase -->
+      <div id="debate-setup" class="">
+        <div class="setting-group">
+          <label>토론 주제</label>
+          <textarea id="debate-topic" placeholder="예: '인공지능은 인류에게 위협인가?' 혹은 '기본소득은 도입되어야 한다'" rows="2"></textarea>
+        </div>
+        <div class="setting-group">
+          <label>AI 토론자 수 (2~4명)</label>
+          <div class="debater-count-row">
+            <button class="debater-count-btn active" data-count="2">2명</button>
+            <button class="debater-count-btn" data-count="3">3명</button>
+            <button class="debater-count-btn" data-count="4">4명</button>
+          </div>
+        </div>
+        <div class="setting-group">
+          <label>라운드 수</label>
+          <div class="debater-count-row">
+            <button class="round-count-btn active" data-rounds="3">3라운드</button>
+            <button class="round-count-btn" data-rounds="5">5라운드</button>
+            <button class="round-count-btn" data-rounds="7">7라운드</button>
+          </div>
+        </div>
+        <button id="start-debate-btn" class="primary-btn">토론 시작 🎤</button>
+      </div>
+
+      <!-- Debate Phase -->
+      <div id="debate-arena-main" class="hidden">
+        <div id="debate-topic-display" class="debate-topic-banner"></div>
+        <div id="debate-messages" class="debate-messages"></div>
+        <div id="debate-human-input-area" class="debate-human-area">
+          <textarea id="debate-human-input" placeholder="인간으로서 의견을 추가하세요... (비워두면 AI끼리 계속 진행)"></textarea>
+          <div class="debate-actions">
+            <button id="debate-next-btn" class="primary-btn small">
+              <span id="debate-next-text">다음 발언 →</span>
+              <div class="loader hidden" id="debate-spinner"></div>
+            </button>
+            <button id="debate-conclude-btn" class="glass-btn small-btn">결론 도출 🏁</button>
+            <button id="debate-stop-btn" class="glass-btn small-btn danger-btn">토론 종료</button>
+          </div>
+        </div>
+        <div id="debate-conclusion" class="debate-conclusion hidden"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Debate Trigger Button (floating) -->
+  <button id="open-debate-btn" class="debate-float-btn" title="AI 토론장 열기">⚔️</button>
+
+  <!-- Error Modal -->
+  <div id="error-modal" class="modal hidden">
+    <div class="modal-content glass-panel error-content">
+      <div class="modal-header">
+        <h2 class="error-title">⚠️ 오류 발생</h2>
+        <button id="close-error-modal-btn" class="icon-btn">&times;</button>
+      </div>
+      <div id="error-modal-message" class="error-body"></div>
+      <button id="error-ok-btn" class="primary-btn">확인</button>
+    </div>
+  </div>
+
+  <!-- Guest API Prompt Modal -->
+  <div id="guest-api-modal" class="modal hidden">
+    <div class="modal-content glass-panel">
+      <div class="modal-header">
+        <h2>🔑 API 키 사용안내</h2>
+        <button id="close-guest-api-btn" class="icon-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>비로그인 상태에서는 별도의 API 키가 필요할 수 있습니다.</p>
+        <p>비로그인으로 API 키를 사용하시겠습니까?</p>
+      </div>
+      <div class="modal-footer">
+        <button id="guest-api-yes-btn" class="primary-btn">네, 사용하겠습니다</button>
+        <button id="guest-api-no-btn" class="secondary-btn">아니오</button>
+      </div>
+      <div id="guest-api-input-area" class="hidden" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+        <div class="setting-group">
+          <label>Gemini API 키 입력</label>
+          <input type="password" id="guest-api-key-input" placeholder="AI 사용을 위해 API 키를 입력하세요">
+        </div>
+        <button id="guest-api-save-btn" class="primary-btn">키 저장 및 적용</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
