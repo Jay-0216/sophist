@@ -111,7 +111,9 @@ const SPEECH_RECOGNITION_SENSITIVITY = 1000; // 1초 침묵 시 자동 종료
 let currentAbortController = null; // For stopping generation
 let currentAiSpeechText = ""; // To prevent echo self-interruption
 
-
+// --- Option A: 내장(하드코딩) NVIDIA API 키 설정 ---
+// 사용자가 API 키를 입력하지 않았을 때 사용할 NVIDIA의 기본(무제한) API 키를 아래에 입력하세요.
+const FALLBACK_NVIDIA_API_KEY = "YOUR_NVIDIA_API_KEY_HERE";
 
 // --- API Key Security Logic ---
 const STORAGE_KEY = 'sophist_encrypted_api_key';
@@ -1512,15 +1514,19 @@ async function callGemini(mode = 'primary', overrideInput = null) {
   const tone = toneSelect.value;
 
   if (!apiKey) {
-    if (!currentUser) {
-      guestApiModal.classList.remove('hidden');
-      guestApiInputArea.classList.add('hidden');
-    } else {
-      showError("API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
-      historySidebar.classList.remove('hidden');
-      sidebarOverlay.classList.remove('hidden');
+    if (!FALLBACK_NVIDIA_API_KEY || FALLBACK_NVIDIA_API_KEY === "YOUR_NVIDIA_API_KEY_HERE") {
+        if (!currentUser) {
+          guestApiModal.classList.remove('hidden');
+          guestApiInputArea.classList.add('hidden');
+        } else {
+          showError("기본 서버 API 키가 설정되지 않았습니다. API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
+          historySidebar.classList.remove('hidden');
+          sidebarOverlay.classList.remove('hidden');
+        }
+        return;
     }
-    return;
+    // 기본 키가 등록되어 있고 사용자가 입력하지 않았다면 NVIDIA NIM 호출 모드로 전환
+    return callNvidiaNIM(mode, overrideInput);
   }
 
   // Proceed with existing callGemini logic (duplicated here for flow)
@@ -1630,6 +1636,137 @@ finally {
 }
 }
 
+// ==========================================
+// NVIDIA NIM API 호출 함수 (Fallback 용)
+// ==========================================
+async function callNvidiaNIM(mode = 'primary', overrideInput = null) {
+  const targetInputEle = mode === 'primary' ? opponentInput : followUpInput;
+  const input = overrideInput || (targetInputEle ? targetInputEle.value.trim() : "");
+  const tone = toneSelect.value;
+  // NVIDIA NIM에서 사용할 모델 설정 (예: llama 3.1)
+  const nvidiaModelName = "meta/llama-3.1-70b-instruct"; 
+
+  if (!input && !currentBase64) return;
+  if (!isConversationMode) setLoading(true, mode);
+  window.speechSynthesis.cancel();
+  if (stopGenerationBtn) stopGenerationBtn.classList.remove('hidden');
+  currentAbortController = new AbortController();
+
+  try {
+    const messages = [
+      { role: "system", content: getSystemInstruction(tone) }
+    ];
+
+    // 기존 Gemini 형식의 히스토리를 OpenAI(Nvidia NIM) 형식으로 변환
+    conversationHistory.forEach(msg => {
+      messages.push({
+        role: msg.role === 'model' ? 'assistant' : 'user',
+        content: msg.parts && msg.parts[0] ? msg.parts[0].text : (msg.content || "")
+      });
+    });
+
+    let userContent = input || "이 상황을 평가해줘.";
+    
+    // 이미지 처리 (Vision 모델 지원 여부에 따라 다르나 표준 OpenAI 형식 적용)
+    if (currentBase64) {
+      userContent = [
+        { type: "text", text: input || "이 상황을 평가해줘." },
+        { type: "image_url", image_url: { url: `data:${currentMimeType};base64,${currentBase64}` } }
+      ];
+    }
+    messages.push({ role: "user", content: userContent });
+
+    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${FALLBACK_NVIDIA_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: nvidiaModelName,
+        messages: messages,
+        temperature: 0.9,
+        max_tokens: isEasterEggActive ? 4000 : 2000
+      }),
+      signal: currentAbortController.signal
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`NVIDIA API 에러: ${response.status} ${errorData.detail || errorData.message || ''}`);
+    }
+
+    const data = await response.json();
+    const responseText = data.choices && data.choices[0] && data.choices[0].message.content;
+
+    if (!responseText) throw new Error("NVIDIA API에서 빈 응답을 받았습니다.");
+
+    // Gemini 호환을 위해 응답을 Gemini 형식으로 히스토리에 푸시
+    const userParts = currentBase64 ? 
+      [{text: input || "이 상황을 평가해줘."}, { inline_data: { mime_type: currentMimeType, data: currentBase64 } }] : 
+      [{text: input || "이 상황을 평가해줘."}];
+      
+    conversationHistory.push({ role: "user", parts: userParts });
+    conversationHistory.push({ role: "model", parts: [{ text: responseText }] }); 
+
+    // 화면 렌더링
+    if (isConversationMode) {
+      liveAiResponse.innerText = responseText;
+      speakText(responseText);
+    } else {
+      let displayHtml = '';
+      if (mode === 'primary') {
+        displayHtml = marked.parse(responseText);
+      } else {
+        const latestExchange = `**나:** ${input}\n\n**Sophist:** ${responseText}`;
+        displayHtml = aiResponse.innerHTML + '<hr>' + marked.parse(latestExchange);
+      }
+      if (mode === 'primary') {
+        settingsPanel.classList.add('hidden');
+        inputPanel.classList.add('hidden');
+        convControls.classList.add('hidden');
+      }
+      aiResponse.innerHTML = displayHtml;
+      outputPanel.classList.remove('hidden');
+      if (continuationArea) continuationArea.classList.remove('hidden');
+      
+      const scoreContainer = document.getElementById('logic-score-container');
+      if (scoreContainer) {
+        const baseScore = isEasterEggActive ? 10 : 60;
+        const score = Math.min(100, Math.max(10, Math.floor(baseScore + Math.random() * 30 + (input.length / 10))));
+        let scoreClass = 'score-mid';
+        let emoji = '😐';
+        if (score >= 85) { scoreClass = 'score-high'; emoji = '🔥'; }
+        else if (score <= 40) { scoreClass = 'score-low'; emoji = '🥶'; }
+        scoreContainer.innerHTML = `<div class="logic-score-badge ${scoreClass}">논리 강도 점수: ${score}점 ${emoji}</div>`;
+        scoreContainer.classList.remove('hidden');
+      }
+      
+      if (currentUser) updateDailyUsage(currentUser.uid);
+      targetInputEle.value = '';
+      setTimeout(() => { outputPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      showError(err.message);
+    }
+    if (isConversationMode) {
+      liveStatusText.innerText = "오류가 발생했습니다.";
+      liveStatusText.style.color = "#f43f5e";
+      setTimeout(() => {
+        if (isConversationMode) {
+          liveStatusText.innerText = "Sophist가 듣고 있습니다...";
+          liveStatusText.style.color = "#a1a1aa";
+        }
+      }, 3000);
+    }
+  } finally {
+    if (!isConversationMode) setLoading(false, mode);
+    if (stopGenerationBtn) stopGenerationBtn.classList.add('hidden');
+    currentAbortController = null;
+  }
+}
+
 // 4. AI Debate Arena
 const openDebateBtn = document.getElementById('open-debate-btn');
 const debateArena = document.getElementById('debate-arena');
@@ -1695,7 +1832,9 @@ if (openDebateBtn) {
   startDebateBtn.addEventListener('click', () => {
     const topic = document.getElementById('debate-topic').value.trim();
     if (!topic) return alert("토론 주제를 입력하세요.");
-    if (!apiKeyInput.value) return alert("API 키가 필요합니다.");
+    if (!apiKeyInput.value && (!FALLBACK_NVIDIA_API_KEY || FALLBACK_NVIDIA_API_KEY === "YOUR_NVIDIA_API_KEY_HERE")) {
+      return alert("API 키가 필요합니다 (기본 키가 설정되지 않음).");
+    }
 
     debateState = {
       active: true,
@@ -1768,15 +1907,36 @@ if (openDebateBtn) {
     try {
       const prompt = `다음은 ' ${debateState.topic} ' 주제에 대해 진행된 AI들과 인간의 토론 내용입니다.\n\n[토론 내용]\n${debateState.history.join('\n\n')}\n\n이 토론을 종합적으로 분석하고, 최종적으로 결론을 도출하십시오(중립적인 요약 + 우세한 논리 요약).`;
 
-      const ai = getAiClient(apiKeyInput.value);
-      if (!ai) throw new Error("AI 클라이언트 초기화에 실패했습니다.");
-
-      const data = await ai.models.generateContent({
-        model: modelSelect.value,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 2000 }
-      });
-      const text = data?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      let text = "";
+      if (!apiKeyInput.value) {
+        // NVIDIA NIM 사용
+        const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${FALLBACK_NVIDIA_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "meta/llama-3.1-70b-instruct",
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 2000
+          })
+        });
+        if (!response.ok) throw new Error("NVIDIA API 에러: " + response.status);
+        const data = await response.json();
+        text = data.choices && data.choices[0] && data.choices[0].message.content;
+      } else {
+        // Gemini 사용
+        const ai = getAiClient(apiKeyInput.value);
+        if (!ai) throw new Error("AI 클라이언트 초기화에 실패했습니다.");
+        const data = await ai.models.generateContent({
+          model: modelSelect.value,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 2000 }
+        });
+        text = data?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      }
+      
       if (!text) throw new Error("결론을 생성할 수 없습니다.");
 
       debateConclusion.innerHTML = `<h3>토론 결론</h3>${marked.parse(text)}`;
@@ -1825,17 +1985,41 @@ if (openDebateBtn) {
         prompt += recentHistory + "\n\n위 직전 발언들의 논리적 허점을 철저히 공격하며 당신의 입장으로 반박하십시오. (인간의 개입이 있었다면 우선 인간의 발언부터 논파하십시오.) 짧게 2~3문단으로 끝내십시오.";
       }
 
-      const ai = getAiClient(apiKeyInput.value);
-      if (!ai) throw new Error("AI 클라이언트 초기화에 실패했습니다.");
+      let aiContent = "";
+      if (!apiKeyInput.value) {
+        // NVIDIA NIM 사용
+        const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${FALLBACK_NVIDIA_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "meta/llama-3.1-70b-instruct",
+            messages: [
+              { role: "system", content: currentRole.system },
+              { role: "user", content: prompt }
+            ],
+            temperature: 0.9,
+            max_tokens: 1000
+          })
+        });
+        if (!response.ok) throw new Error("NVIDIA API 에러: " + response.status);
+        const data = await response.json();
+        aiContent = data.choices && data.choices[0] && data.choices[0].message.content;
+      } else {
+        // Gemini 사용
+        const ai = getAiClient(apiKeyInput.value);
+        if (!ai) throw new Error("AI 클라이언트 초기화에 실패했습니다.");
+        const data = await ai.models.generateContent({
+          model: modelSelect.value,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          systemInstruction: { parts: [{ text: currentRole.system }] },
+          generationConfig: { temperature: 0.9, maxOutputTokens: 1000 }
+        });
+        aiContent = data?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      }
 
-      const data = await ai.models.generateContent({
-        model: modelSelect.value,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        systemInstruction: { parts: [{ text: currentRole.system }] },
-        generationConfig: { temperature: 0.9, maxOutputTokens: 1000 }
-      });
-
-      const aiContent = data?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!aiContent) throw new Error("발언을 생성할 수 없습니다.");
 
       addDebateMessage(currentRole.name, aiContent, currentRole.color);
