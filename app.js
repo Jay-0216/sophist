@@ -1946,7 +1946,7 @@ if (openDebateBtn) {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            model: "meta/llama-3.1-70b-instruct",
+            model: modelSelect ? modelSelect.value : "meta/llama-3.1-70b-instruct",
             messages: [{ role: "user", content: prompt }],
             max_tokens: 2000
           })
