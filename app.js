@@ -1,3 +1,9 @@
+import { initializeApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, serverTimestamp, runTransaction, query, orderBy, limit } from "firebase/firestore";
+import { GoogleGenAI } from "@google/genai";
+
+console.log('Sophist App: Script Starting...');
 // Elements
 const apiKeyInput = document.getElementById('api-key-input');
 const saveApiKeyCheck = document.getElementById('save-api-key');
@@ -77,6 +83,12 @@ const liveAiResponse = document.getElementById('live-ai-response');
 const webcamPreview = document.getElementById('webcam-preview');
 const webcamCanvas = document.getElementById('webcam-canvas');
 
+const liveModelModal = document.getElementById('live-model-modal');
+const liveModelSelect = document.getElementById('live-model-select');
+const liveModelConfirmBtn = document.getElementById('live-model-confirm-btn');
+const liveModelCancelBtn = document.getElementById('live-model-cancel-btn');
+const liveModelCloseBtn = document.getElementById('live-model-close-btn');
+
 // State
 let currentFile = null;
 let currentBase64 = null;
@@ -94,21 +106,19 @@ let mediaStream = null;
 let activeUtterance = null;
 let sttTimer = null;
 let lastTranscript = "";
-let isRequesting = false; 
+let isRequesting = false;
 const SPEECH_RECOGNITION_SENSITIVITY = 1000; // 1초 침묵 시 자동 종료
 let currentAbortController = null; // For stopping generation
 let currentAiSpeechText = ""; // To prevent echo self-interruption
 
-import { initializeApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, serverTimestamp, runTransaction, query, orderBy, limit } from "firebase/firestore";
+
 
 // --- API Key Security Logic ---
 const STORAGE_KEY = 'sophist_encrypted_api_key';
 const ENCRYPTION_SECRET = 'sophist_logic_shield_2026';
 
 function simpleEncrypt(text) {
-  const code = text.split('').map((c, i) => 
+  const code = text.split('').map((c, i) =>
     String.fromCharCode(c.charCodeAt(0) ^ ENCRYPTION_SECRET.charCodeAt(i % ENCRYPTION_SECRET.length))
   ).join('');
   return btoa(unescape(encodeURIComponent(code)));
@@ -117,7 +127,7 @@ function simpleEncrypt(text) {
 function simpleDecrypt(encoded) {
   try {
     const decoded = decodeURIComponent(escape(atob(encoded)));
-    return decoded.split('').map((c, i) => 
+    return decoded.split('').map((c, i) =>
       String.fromCharCode(c.charCodeAt(0) ^ ENCRYPTION_SECRET.charCodeAt(i % ENCRYPTION_SECRET.length))
     ).join('');
   } catch (e) { return ""; }
@@ -138,6 +148,16 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+let aiClient = null;
+let aiClientApiKey = null;
+function getAiClient(apiKey) {
+  if (!apiKey) return null;
+  if (aiClient && aiClientApiKey === apiKey) return aiClient;
+  aiClientApiKey = apiKey;
+  aiClient = new GoogleGenAI({ apiKey });
+  return aiClient;
+}
+
 let currentUser = null;
 let isRegisterMode = false;
 let currentLoadedHistoryId = null;
@@ -146,7 +166,7 @@ let initialAuthChecked = false;
 onAuthStateChanged(auth, async (user) => {
   const wasLoggedIn = !!currentUser;
   currentUser = user;
-  
+
   if (user) {
     authHeaderBtn.textContent = '마이페이지';
     authModal.classList.add('hidden');
@@ -161,7 +181,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('sidebar-nickname').textContent = '게스트';
     document.getElementById('sidebar-email').textContent = '로그인이 필요합니다';
     document.getElementById('user-profile-sidebar').classList.add('hidden');
-    
+
     // Only clear if this was a literal logout action, 
     // NOT on initial load when user is just a guest.
     if (wasLoggedIn) {
@@ -194,6 +214,7 @@ async function loadUserData(uid) {
       }
       if (data.model) modelSelect.value = data.model;
       if (data.tone) toneSelect.value = data.tone;
+      syncAllCustomDropdowns();
       if (data.nickname) {
         document.getElementById('sidebar-nickname').textContent = data.nickname;
       } else {
@@ -214,7 +235,7 @@ async function saveUserData(uid) {
   } else {
     dataToSave.encryptedApiKey = "";
   }
-  
+
   try {
     await setDoc(doc(db, "users", uid), dataToSave, { merge: true });
   } catch (e) { console.error("Error saving user data:", e); }
@@ -226,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     apiKeyInput.value = simpleDecrypt(savedEncryptedKey);
     saveApiKeyCheck.checked = true;
   }
-  
+
   // Theme check
   if (localStorage.getItem('sophist_theme') === 'light') {
     document.body.classList.add('light-mode');
@@ -280,8 +301,136 @@ saveApiKeyCheck.addEventListener('change', () => {
   }
 });
 
-modelSelect.addEventListener('change', () => { if (currentUser) saveUserData(currentUser.uid); });
-toneSelect.addEventListener('change', () => { if (currentUser) saveUserData(currentUser.uid); });
+// --- Gemini Model Selection ---
+const GEMINI_MODELS = [
+  { value: 'gemini-flash-latest', text: 'Gemini Flash Latest' },
+  { value: 'gemini-flash-lite-latest', text: 'Gemini Flash-Lite Latest' },
+  { value: 'gemini-pro-latest', text: 'Gemini Pro Latest' },
+  { value: 'gemini-2.5-flash', text: 'Gemini 2.5 Flash' },
+  { value: 'gemini-2.5-pro', text: 'Gemini 2.5 Pro' },
+  { value: 'gemini-3-pro-preview', text: 'Gemini 3 Pro Preview' },
+  { value: 'gemini-3-flash-preview', text: 'Gemini 3 Flash Preview' },
+  { value: 'gemini-3.1-pro-preview', text: 'Gemini 3.1 Pro Preview' },
+  { value: 'gemini-3.1-flash-lite-preview', text: 'Gemini 3.1 Flash Lite Preview' }
+];
+const NORMAL_GEMINI_MODELS = GEMINI_MODELS.filter(m => !/tts/i.test(m.value));
+const LIVE_GEMINI_MODELS = NORMAL_GEMINI_MODELS;
+let currentModelMode = 'normal';
+
+function updateModelOptions(mode = 'normal') {
+  currentModelMode = mode;
+  const models = mode === 'live' ? LIVE_GEMINI_MODELS : NORMAL_GEMINI_MODELS;
+  const allowedModels = models.length > 0 ? models : NORMAL_GEMINI_MODELS;
+
+  if (modelSelect) {
+    modelSelect.innerHTML = allowedModels.map(m => `<option value="${m.value}">${m.text}</option>`).join('');
+  }
+
+  const customOptions = document.querySelector('#custom-model-select .custom-options');
+  const customTrigger = document.querySelector('#custom-model-select .custom-select-trigger span');
+  if (customOptions) {
+    customOptions.innerHTML = allowedModels.map(m =>
+      `<span class="custom-option" data-value="${m.value}">${m.text}</span>`
+    ).join('');
+
+    customOptions.querySelectorAll('.custom-option').forEach(option => {
+      option.addEventListener('click', () => {
+        const value = option.getAttribute('data-value');
+        if (modelSelect) modelSelect.value = value;
+        if (currentUser) saveUserData(currentUser.uid);
+
+        customOptions.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
+        option.classList.add('selected');
+        if (customTrigger) customTrigger.textContent = option.textContent;
+        const customModelContainer = document.getElementById('custom-model-select');
+        if (customModelContainer) customModelContainer.classList.remove('open');
+      });
+    });
+  }
+
+  if (customTrigger && allowedModels.length > 0) {
+    customTrigger.textContent = allowedModels[0].text;
+  }
+
+  if (currentUser) saveUserData(currentUser.uid);
+}
+
+if (modelSelect) modelSelect.addEventListener('change', () => { if (currentUser) saveUserData(currentUser.uid); });
+if (toneSelect) toneSelect.addEventListener('change', () => { if (currentUser) saveUserData(currentUser.uid); });
+
+updateModelOptions();
+
+// --- Custom Select handlers ---
+try {
+  const customModelSelect = document.getElementById('custom-model-select');
+
+  const initCustomDropdown = (container, selectId, onSelect) => {
+    if (!container) return;
+    const trigger = container.querySelector('.custom-select-trigger');
+    const options = container.querySelector('.custom-options');
+    const hiddenSelect = document.getElementById(selectId);
+    if (!trigger || !options || !hiddenSelect) return;
+
+    trigger.addEventListener('click', (event) => {
+      event.stopPropagation();
+      container.classList.toggle('open');
+    });
+
+    options.querySelectorAll('.custom-option').forEach(option => {
+      option.addEventListener('click', () => {
+        const value = option.getAttribute('data-value');
+        hiddenSelect.value = value;
+        if (onSelect) onSelect(value, option);
+
+        options.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
+        option.classList.add('selected');
+        const span = trigger.querySelector('span');
+        if (span) span.textContent = option.textContent;
+
+        container.classList.remove('open');
+        hiddenSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+  };
+
+  const syncCustomDropdown = (containerId, selectId) => {
+    const container = document.getElementById(containerId);
+    const hiddenSelect = document.getElementById(selectId);
+    if (!container || !hiddenSelect) return;
+    const triggerSpan = container.querySelector('.custom-select-trigger span');
+    const selectedOption = Array.from(container.querySelectorAll('.custom-option'))
+      .find(opt => opt.getAttribute('data-value') === hiddenSelect.value);
+    if (selectedOption && triggerSpan) triggerSpan.textContent = selectedOption.textContent;
+  };
+
+  window.syncAllCustomDropdowns = () => {
+    syncCustomDropdown('custom-tone-select', 'tone-select');
+    syncCustomDropdown('custom-model-select', 'model-select');
+  };
+
+  const customToneSelect = document.getElementById('custom-tone-select');
+
+  initCustomDropdown(customModelSelect, 'model-select', (value) => {
+    if (modelSelect) modelSelect.value = value;
+    if (currentUser) saveUserData(currentUser.uid);
+  });
+
+  initCustomDropdown(customToneSelect, 'tone-select', (value) => {
+    if (toneSelect) toneSelect.value = value;
+    if (currentUser) saveUserData(currentUser.uid);
+  });
+
+  // 초기 동기화
+  syncAllCustomDropdowns();
+
+  document.addEventListener('click', () => {
+    [customModelSelect, customToneSelect].forEach(container => {
+      if (container) container.classList.remove('open');
+    });
+  });
+} catch (e) {
+  console.log('Custom select initialization failed:', e.message);
+}
 
 // --- Auth UI Logic ---
 authHeaderBtn.addEventListener('click', () => {
@@ -304,7 +453,7 @@ function handleAuthToggle(e) {
   authTitle.textContent = isRegisterMode ? '회원가입' : '로그인';
   authSubmitBtn.textContent = isRegisterMode ? '회원가입' : '로그인';
   authError.classList.add('hidden');
-  
+
   if (isRegisterMode) {
     nicknameGroup.classList.remove('hidden');
     authNicknameInput.required = true;
@@ -312,11 +461,11 @@ function handleAuthToggle(e) {
     nicknameGroup.classList.add('hidden');
     authNicknameInput.required = false;
   }
-  
-  document.getElementById('auth-toggle-text').innerHTML = isRegisterMode ? 
-    '이미 계정이 있으신가요? <a href="#" id="auth-toggle-btn">로그인</a>' : 
+
+  document.getElementById('auth-toggle-text').innerHTML = isRegisterMode ?
+    '이미 계정이 있으신가요? <a href="#" id="auth-toggle-btn">로그인</a>' :
     '계정이 없으신가요? <a href="#" id="auth-toggle-btn">회원가입</a>';
-  
+
   // Rebind toggler
   document.getElementById('auth-toggle-btn').addEventListener('click', handleAuthToggle);
 }
@@ -328,7 +477,7 @@ authForm.addEventListener('submit', async (e) => {
   authError.classList.add('hidden');
   const email = authEmail.value.trim();
   const password = authPassword.value;
-  
+
   authSubmitBtn.disabled = true;
   try {
     if (isRegisterMode) {
@@ -374,32 +523,32 @@ async function loadHistories() {
     const historyCol = collection(db, "users", currentUser.uid, "histories");
     const qSnapshot = await getDocs(historyCol);
     historyList.innerHTML = '';
-    
+
     if (qSnapshot.empty) {
       historyList.innerHTML = '<p class="empty-state">저장된 기록이 없습니다.</p>';
       return;
     }
-    
+
     // Convert to array and sort by date desc
     const histories = qSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     histories.sort((a, b) => b.savedAt?.toMillis() - a.savedAt?.toMillis() || 0);
-    
+
     histories.forEach(hist => {
       const div = document.createElement('div');
       div.className = 'history-item';
-      
+
       const dateStr = hist.savedAt ? new Date(hist.savedAt.toDate()).toLocaleString() : '최근';
       const titleStr = hist.title || '이름 없는 대화';
-      
+
       div.innerHTML = `
         <div class="history-date">${dateStr}</div>
         <div class="history-title">${titleStr}</div>
       `;
-      
+
       div.addEventListener('click', () => resumeHistory(hist));
       historyList.appendChild(div);
     });
-    
+
   } catch (e) {
     console.error("Error loading histories", e);
   }
@@ -409,19 +558,19 @@ async function resumeHistory(hist) {
   if (!hist || !hist.messages) return;
   currentLoadedHistoryId = hist.id;
   conversationHistory = hist.messages;
-  
+
   // Close sidebar
   historySidebar.classList.add('hidden');
   sidebarOverlay.classList.add('hidden');
-  
+
   // Render full history
   let fullHtml = '';
   // Usually history starts with USER -> AI -> USER -> AI
   let index = 0;
   while (index < conversationHistory.length) {
     const userMsg = conversationHistory[index];
-    const aiMsg = conversationHistory[index+1];
-    
+    const aiMsg = conversationHistory[index + 1];
+
     if (userMsg && userMsg.role === 'user') {
       fullHtml += `**나:** ${userMsg.parts[0].text}\n\n`;
     }
@@ -431,20 +580,20 @@ async function resumeHistory(hist) {
     }
     index += 2;
   }
-  
+
   aiResponse.innerHTML = marked.parse(fullHtml);
-  
+
   // Update UI to show Continuation mode
   settingsPanel.classList.add('hidden');
   inputPanel.classList.add('hidden');
   convControls.classList.add('hidden');
-  
+
   outputPanel.classList.remove('hidden');
   continuationArea.classList.remove('hidden');
-  
+
   saveHistoryBtn.innerText = '현재 상태 클라우드에 업데이트';
   saveHistoryBtn.disabled = false;
-  
+
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -454,13 +603,13 @@ saveHistoryBtn.addEventListener('click', async () => {
     return;
   }
   if (conversationHistory.length < 2) return;
-  
+
   saveHistoryBtn.innerText = '저장 중...';
   saveHistoryBtn.disabled = true;
-  
+
   try {
     const title = conversationHistory[0].parts[0].text.substring(0, 30) + "...";
-    
+
     if (currentLoadedHistoryId) {
       // Update existing
       const docRef = doc(db, "users", currentUser.uid, "histories", currentLoadedHistoryId);
@@ -471,13 +620,13 @@ saveHistoryBtn.addEventListener('click', async () => {
       const newDoc = await addDoc(colRef, { messages: conversationHistory, savedAt: serverTimestamp(), title });
       currentLoadedHistoryId = newDoc.id;
     }
-    
+
     saveHistoryBtn.innerText = '저장 완료!';
     setTimeout(() => saveHistoryBtn.innerText = '현재 상태 클라우드에 업데이트', 2000);
-    
+
     // Refresh sidebar silently
     loadHistories();
-    
+
   } catch (e) {
     console.error("Error saving history:", e);
     alert("저장에 실패했습니다.");
@@ -487,31 +636,33 @@ saveHistoryBtn.addEventListener('click', async () => {
 });
 
 // --- Theme Toggle ---
-themeToggle.addEventListener('click', () => {
-  const isLight = document.body.classList.toggle('light-mode');
-  localStorage.setItem('sophist_theme', isLight ? 'light' : 'dark');
-  sunIcon.classList.toggle('hidden');
-  moonIcon.classList.toggle('hidden');
+if (themeToggle) {
+  themeToggle.addEventListener('click', () => {
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('sophist_theme', isLight ? 'light' : 'dark');
+    if (sunIcon) sunIcon.classList.toggle('hidden');
+    if (moonIcon) moonIcon.classList.toggle('hidden');
 
-  // Easter Egg Logic
-  themeClickCount++;
-  if (themeClickCount === 20) {
-    triggerEasterEgg();
-    themeClickCount = 0;
-  }
-});
+    // Easter Egg Logic
+    themeClickCount++;
+    if (themeClickCount === 20) {
+      triggerEasterEgg();
+      themeClickCount = 0;
+    }
+  });
+}
 
 function triggerEasterEgg() {
   const h1 = document.querySelector('.header h1');
-  const originalText = "Sophist"; 
+  const originalText = "Sophist";
   const orbs = document.querySelectorAll('.orb');
-  
+
   if (!isEasterEggActive) {
     // Turn ON
     isEasterEggActive = true;
     h1.textContent = "REALITY WARP";
     document.documentElement.style.transition = "filter 0.1s";
-    
+
     const rainbowColors = [
       ['#ff0080', '#ff00ff', '#8000ff'],
       ['#ff6600', '#ff0000', '#ff00aa'],
@@ -628,7 +779,7 @@ if (SpeechRecognition) {
   recognition = new SpeechRecognition();
   recognition.lang = 'ko-KR';
   recognition.interimResults = true;
-  recognition.continuous = true; 
+  recognition.continuous = true;
 
   recognition.onstart = () => {
     if (isConversationMode) {
@@ -652,7 +803,7 @@ if (SpeechRecognition) {
         interimTranscript += event.results[i][0].transcript;
       }
     }
-    
+
     // We only care about the latest segment for live updates
     const text = finalTranscript || interimTranscript;
 
@@ -666,7 +817,7 @@ if (SpeechRecognition) {
           // Likely echo or too short, ignore
           return;
         }
-        
+
         // If we reach here, it's likely a real user interruption
         window.speechSynthesis.cancel();
         isSpeaking = false;
@@ -675,13 +826,13 @@ if (SpeechRecognition) {
 
       lastTranscript = text;
       liveUserTranscript.innerText = text;
-      
+
       clearTimeout(sttTimer);
       sttTimer = setTimeout(() => {
         if (isConversationMode && lastTranscript.trim() && !isRequesting) {
           processConversationInput(lastTranscript);
           // Clear the STT results accumulation by stopping and restarting
-          try { recognition.stop(); } catch(e){}
+          try { recognition.stop(); } catch (e) { }
         }
       }, SPEECH_RECOGNITION_SENSITIVITY);
     } else if (activeSTTTarget) {
@@ -696,12 +847,12 @@ if (SpeechRecognition) {
     if (sttBtnFollow) sttBtnFollow.classList.remove('recording');
     // Important: Only restart in Conversation Mode if user isn't currently speaking
     if (isConversationMode && !isSpeaking) {
-       try { 
-         // Small delay to prevent "double-start" errors which trigger permission prompts in some browsers
-         setTimeout(() => {
-           if (isConversationMode) recognition.start();
-         }, 100);
-       } catch(e){}
+      try {
+        // Small delay to prevent "double-start" errors which trigger permission prompts in some browsers
+        setTimeout(() => {
+          if (isConversationMode) recognition.start();
+        }, 100);
+      } catch (e) { }
     }
   };
 }
@@ -724,7 +875,7 @@ function handleEnterKey(e, mode) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     if (recognition) {
-       recognition.stop();
+      recognition.stop();
     }
     window.speechSynthesis.cancel();
     callGemini(mode);
@@ -739,8 +890,8 @@ if (followUpInput) {
 // --- AI Voice (Google 한국어 Neural 우선) ---
 function speakText(textToRead) {
   window.speechSynthesis.cancel();
-  currentAiSpeechText = textToRead; 
-  
+  currentAiSpeechText = textToRead;
+
   // Use global activeUtterance to prevent garbage collection halting the speech in Chrome
   activeUtterance = new SpeechSynthesisUtterance(textToRead);
   activeUtterance.lang = 'ko-KR';
@@ -749,10 +900,10 @@ function speakText(textToRead) {
 
   const setVoice = () => {
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('ko')) || 
-                           voices.find(v => v.lang.includes('ko'));
+    const preferredVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('ko')) ||
+      voices.find(v => v.lang.includes('ko'));
     if (preferredVoice) activeUtterance.voice = preferredVoice;
-    
+
     activeUtterance.onstart = () => {
       isSpeaking = true;
       if (ttsBtn) ttsBtn.classList.add('tts-speaking');
@@ -788,12 +939,78 @@ function speakText(textToRead) {
 async function startConversationMode() {
   const apiKey = apiKeyInput.value.trim();
   if (!apiKey) { showError("API 키가 필요합니다."); return; }
+  openLiveModelPopup();
+}
+
+function openLiveModelPopup() {
+  if (!liveModelModal || !liveModelSelect) return;
+  if (!LIVE_GEMINI_MODELS.length) {
+    showError("LIVE 전용 Gemini 모델이 설정되지 않았습니다.");
+    return;
+  }
+
+  const customLiveModelSelect = document.getElementById('custom-live-model-select');
+  const customOptions = customLiveModelSelect?.querySelector('.custom-options');
+  const customTrigger = customLiveModelSelect?.querySelector('.custom-select-trigger span');
+
+  liveModelSelect.innerHTML = LIVE_GEMINI_MODELS.map(m =>
+    `<option value="${m.value}">${m.text}</option>`
+  ).join('');
+
+  if (customOptions) {
+    customOptions.innerHTML = LIVE_GEMINI_MODELS.map(m =>
+      `<span class="custom-option" data-value="${m.value}">${m.text}</span>`
+    ).join('');
+
+    customOptions.querySelectorAll('.custom-option').forEach(option => {
+      option.addEventListener('click', () => {
+        const value = option.getAttribute('data-value');
+        liveModelSelect.value = value;
+        customOptions.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
+        option.classList.add('selected');
+        if (customTrigger) customTrigger.textContent = option.textContent;
+        customLiveModelSelect.classList.remove('open');
+      });
+    });
+  }
+
+  const currentLiveValue = LIVE_GEMINI_MODELS.find(m => m.value === modelSelect.value)?.value;
+  const defaultValue = currentLiveValue || LIVE_GEMINI_MODELS[0].value;
+  liveModelSelect.value = defaultValue;
+
+  if (customTrigger && customOptions) {
+    const defaultOption = customOptions.querySelector(`[data-value="${defaultValue}"]`);
+    if (defaultOption) {
+      customTrigger.textContent = defaultOption.textContent;
+      customOptions.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
+      defaultOption.classList.add('selected');
+    }
+  }
+
+  // Initialize trigger click handler
+  if (customLiveModelSelect) {
+    const trigger = customLiveModelSelect.querySelector('.custom-select-trigger');
+    if (trigger) {
+      trigger.onclick = null; // Clear previous handlers
+      trigger.addEventListener('click', (event) => {
+        event.stopPropagation();
+        customLiveModelSelect.classList.toggle('open');
+      });
+    }
+  }
+
+  liveModelModal.classList.remove('hidden');
+}
+
+async function startLiveMode() {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) { showError("API 키가 필요합니다."); return; }
   isConversationMode = true;
   lastTranscript = "";
   liveOverlay.classList.remove('hidden');
   await startWebcam();
   if (recognition) {
-    try { recognition.start(); } catch(e){}
+    try { recognition.start(); } catch (e) { }
   }
 }
 
@@ -804,6 +1021,7 @@ function stopConversationMode() {
   if (recognition) recognition.stop();
   window.speechSynthesis.cancel();
   stopWebcam();
+  updateModelOptions('normal');
 }
 
 async function processConversationInput(text) {
@@ -816,7 +1034,31 @@ async function processConversationInput(text) {
 convModeBtn.addEventListener('click', startConversationMode);
 convStopBtnLive.addEventListener('click', stopConversationMode);
 
-function showError(msg) { 
+liveModelConfirmBtn?.addEventListener('click', () => {
+  const chosenModel = liveModelSelect?.value;
+  if (!chosenModel) {
+    showError("LIVE 모델을 선택해주세요.");
+    return;
+  }
+
+  updateModelOptions('live');
+  if (modelSelect) modelSelect.value = chosenModel;
+  syncAllCustomDropdowns();
+  if (currentUser) saveUserData(currentUser.uid);
+  liveModelModal.classList.add('hidden');
+  startLiveMode();
+});
+
+const closeLiveModelModal = () => {
+  liveModelModal?.classList.add('hidden');
+  const customLiveModelSelect = document.getElementById('custom-live-model-select');
+  if (customLiveModelSelect) customLiveModelSelect.classList.remove('open');
+};
+
+liveModelCancelBtn?.addEventListener('click', closeLiveModelModal);
+liveModelCloseBtn?.addEventListener('click', closeLiveModelModal);
+
+function showError(msg) {
   const errorModal = document.getElementById('error-modal');
   const errorMsgText = document.getElementById('error-modal-message');
   if (errorModal && errorMsgText) {
@@ -825,6 +1067,17 @@ function showError(msg) {
   } else {
     alert(msg);
   }
+}
+
+function isApiRetryPromptNeeded(message) {
+  return /api key|api키|quota|limit|exceeded|permission|denied|billing|usage|used up|expired|invalid/i.test(message);
+}
+
+function openGuestApiModalForRetry() {
+  if (!guestApiModal || !guestApiInputArea) return;
+  guestApiModal.classList.remove('hidden');
+  guestApiInputArea.classList.remove('hidden');
+  guestApiKeyInput?.focus();
 }
 
 // Close error modal handlers
@@ -847,7 +1100,7 @@ function setLoading(isLoading, mode) {
 
 function getSystemInstruction(tone) {
   const isSupportMode = modeToggle && modeToggle.checked;
-  
+
   const baseCriticize = `당신은 세계 최고의 논리적 토론가 'Sophist(소피스트)'입니다. 
 당신의 목표는 상대방의 의견을 논리적으로 짓밟는 것입니다.
 !!!!!절대 규칙!!!!!
@@ -858,7 +1111,7 @@ function getSystemInstruction(tone) {
 [출력 예시 - 비판 모드]
 입력: "지구는 둥글다."
 출력: "지구가 둥글다는 고정관념에 사로잡혀 계시는군요. 하지만 당신이 매일 밟고 서 있는 이 지면이 완벽하게 평평하다는 감각적 실체를 왜 무시합니까? 물은 항상 수평을 유지하며, 이는 곡면 위에서는 불가능한 물리적 현상입니다. 당신의 주장은 이미 입증된 감각적 사실조차 외면하는 빈약한 이론에 불과합니다."`;
-  
+
   const baseSupport = `당신은 사용자의 '논리적 대리인(Proxy)'입니다. 
 지금부터 당신은 사용자와 한 몸입니다. 사용자의 주장을 당신의 것처럼 받아들여, 처음부터 끝까지 사용자의 입장에서 상대(혹은 세상)를 압도하는 논리적 주장을 펼치십시오.
 !!!!!절대 규칙!!!!!
@@ -880,7 +1133,7 @@ function getSystemInstruction(tone) {
     'emotional': "스타일: 도덕적 우월감을 가지고 상대를 감정적으로 질타하십시오.",
     'nerd': "스타일: 방대한 데이터와 학술 용어로 상대를 압도하십시오."
   };
-  
+
   const tonesSupport = {
     'gentle': "스타일: 사용자의 입장에서 아주 논리정연하고 부드럽게 주장을 전개하십시오.",
     'critical': "스타일: 사용자의 입장에서 아주 공격적이고 냉철하게 반대파를 논파하는 주장을 펼치십시오.",
@@ -917,14 +1170,14 @@ mediaUpload.addEventListener('change', (e) => {
   reader.readAsDataURL(file);
 });
 
-clearHistoryBtn.addEventListener('click', () => { 
-  conversationHistory = []; 
+clearHistoryBtn.addEventListener('click', () => {
+  conversationHistory = [];
   // Reset UI: Show top panels again
   settingsPanel.classList.remove('hidden');
   inputPanel.classList.remove('hidden');
   convControls.classList.remove('hidden');
   outputPanel.classList.add('hidden');
-  alert("기록 초기화됨. 메인 화면으로 돌아갑니다."); 
+  alert("기록 초기화됨. 메인 화면으로 돌아갑니다.");
 });
 submitBtn.addEventListener('click', () => callGemini('primary'));
 if (submitBtnFollow) submitBtnFollow.addEventListener('click', () => callGemini('followup'));
@@ -935,28 +1188,28 @@ if (resetBtnFollow) {
     isRequesting = false;
     if (stopBtnFollow) stopBtnFollow.classList.add('hidden');
     conversationHistory = [];
-    
-      // ... your reset UI code untouched
-    
+
+    // ... your reset UI code untouched
+
     // Reset loaded history state
     currentLoadedHistoryId = null;
     saveHistoryBtn.innerText = '클라우드에 저장 (이어서 반박 가능)';
     saveHistoryBtn.disabled = false;
-    
+
     // Hide Follow-up / Output arrays
     outputPanel.classList.add('hidden');
     if (continuationArea) continuationArea.classList.add('hidden');
-    
+
     // Show Main Settings and Input arrays
     settingsPanel.classList.remove('hidden');
     inputPanel.classList.remove('hidden');
     convControls.classList.remove('hidden');
-    
+
     // Clear Outputs & Inputs
     aiResponse.innerHTML = '';
     followUpInput.value = '';
     opponentInput.value = '';
-    
+
     // Scroll to Top Smoothly
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
@@ -1002,14 +1255,14 @@ if (stopGenerationBtn) {
 }
 copyBtn.addEventListener('click', () => { navigator.clipboard.writeText(aiResponse.innerText); });
 if (ttsBtn) {
-  ttsBtn.addEventListener('click', () => { 
+  ttsBtn.addEventListener('click', () => {
     if (window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
       isSpeaking = false;
       return;
     }
-    const text = aiResponse.innerText; 
-    if (text) speakText(text); 
+    const text = aiResponse.innerText;
+    if (text) speakText(text);
   });
 }
 
@@ -1028,7 +1281,7 @@ if (downloadBtn) {
     });
     if (texts.length === 0) content += aiResponse.innerText;
     else content += texts.join("\n\n");
-    
+
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1049,13 +1302,13 @@ async function updateDailyUsage(uid) {
     await runTransaction(db, async (transaction) => {
       const sfDoc = await transaction.get(docRef);
       if (!sfDoc.exists()) return;
-      
+
       const data = sfDoc.data();
       let currentCount = 0;
       if (data.lastUsageDate === today) {
         currentCount = data.dailyUsageCount || 0;
       }
-      
+
       transaction.update(docRef, {
         dailyUsageCount: currentCount + 1,
         lastUsageDate: today
@@ -1075,12 +1328,12 @@ if (leaderboardBtn) {
   leaderboardBtn.addEventListener('click', async () => {
     leaderboardModal.classList.remove('hidden');
     leaderboardList.innerHTML = '<p class="empty-state">데이터 로딩 중...</p>';
-    
+
     // Fetch top users
     const today = new Date().toISOString().split('T')[0];
     const usersRef = collection(db, "users");
     const q = query(usersRef, orderBy("dailyUsageCount", "desc"), limit(10));
-    
+
     try {
       const qSnapshot = await getDocs(q);
       leaderboardList.innerHTML = '';
@@ -1088,7 +1341,7 @@ if (leaderboardBtn) {
         leaderboardList.innerHTML = '<p class="empty-state">아직 순위가 없습니다.</p>';
         return;
       }
-      
+
       let rank = 1;
       qSnapshot.forEach((d) => {
         const user = d.data();
@@ -1132,17 +1385,17 @@ const modalThemeDark = document.getElementById('modal-theme-dark');
 
 function updateThemeModeUI(isLight) {
   if (isLight) {
-    modalThemeWhite.classList.add('active');
-    modalThemeDark.classList.remove('active');
+    modalThemeWhite?.classList.add('active');
+    modalThemeDark?.classList.remove('active');
     document.body.classList.add('light-mode');
-    sunIcon.classList.remove('hidden');
-    moonIcon.classList.add('hidden');
+    sunIcon?.classList.remove('hidden');
+    moonIcon?.classList.add('hidden');
   } else {
-    modalThemeWhite.classList.remove('active');
-    modalThemeDark.classList.add('active');
+    modalThemeWhite?.classList.remove('active');
+    modalThemeDark?.classList.add('active');
     document.body.classList.remove('light-mode');
-    sunIcon.classList.add('hidden');
-    moonIcon.classList.remove('hidden');
+    sunIcon?.classList.add('hidden');
+    moonIcon?.classList.remove('hidden');
   }
   localStorage.setItem('sophist_theme', isLight ? 'light' : 'dark');
 }
@@ -1153,7 +1406,7 @@ modalThemeDark?.addEventListener('click', () => updateThemeModeUI(false));
 function applyThemeColors(accent, bg1, bg2) {
   document.documentElement.style.setProperty('--accent', accent);
   document.documentElement.style.setProperty('--bg-gradient', `linear-gradient(135deg, ${bg1} 0%, ${bg2} 100%)`);
-  
+
   // Sync to inputs and text values
   if (customAccent) {
     customAccent.value = accent;
@@ -1170,7 +1423,7 @@ function applyThemeColors(accent, bg1, bg2) {
     const valText = customBg2.parentElement?.querySelector('.color-value');
     if (valText) valText.textContent = bg2;
   }
-  
+
   // Save to localStorage
   localStorage.setItem('sophist_custom_theme', JSON.stringify({ accent, bg1, bg2 }));
 }
@@ -1190,7 +1443,7 @@ if (savedColors) {
 if (themeCustomizerBtn) {
   themeCustomizerBtn.addEventListener('click', () => themeCustomizerModal.classList.remove('hidden'));
   closeThemeCustomizerBtn.addEventListener('click', () => themeCustomizerModal.classList.add('hidden'));
-  
+
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const a = btn.dataset.accent;
@@ -1199,7 +1452,7 @@ if (themeCustomizerBtn) {
       applyThemeColors(a, b1, b2);
     });
   });
-  
+
   // Real-time updates for color inputs
   [customAccent, customBg1, customBg2].forEach(input => {
     input?.addEventListener('input', () => {
@@ -1246,7 +1499,7 @@ guestApiSaveBtn?.addEventListener('click', () => {
     saveApiKeyCheck.checked = true;
     debouncedSaveApiKey();
     guestApiModal.classList.add('hidden');
-    alert("API 키가 적용되었습니다.");
+    alert("API 키가 적용되었습니다. 생성 버튼을 다시 눌러주세요.");
   }
 });
 
@@ -1260,16 +1513,16 @@ async function callGemini(mode = 'primary', overrideInput = null) {
 
   if (!apiKey) {
     if (!currentUser) {
-       guestApiModal.classList.remove('hidden');
-       guestApiInputArea.classList.add('hidden');
+      guestApiModal.classList.remove('hidden');
+      guestApiInputArea.classList.add('hidden');
     } else {
-       showError("API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
-       historySidebar.classList.remove('hidden');
-       sidebarOverlay.classList.remove('hidden');
+      showError("API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
+      historySidebar.classList.remove('hidden');
+      sidebarOverlay.classList.remove('hidden');
     }
     return;
   }
-  
+
   // Proceed with existing callGemini logic (duplicated here for flow)
   if (!input && !currentBase64) return;
   if (!isConversationMode) setLoading(true, mode);
@@ -1286,74 +1539,95 @@ async function callGemini(mode = 'primary', overrideInput = null) {
       userParts.push({ inline_data: { mime_type: currentMimeType, data: currentBase64 } });
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: currentAbortController?.signal,
-      body: JSON.stringify({
-        contents: [...conversationHistory, { role: "user", parts: userParts }],
-        systemInstruction: { parts: [{ text: getSystemInstruction(tone) }] },
-        tools: [{ googleSearch: {} }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: isEasterEggActive ? 16384 : 8192 }
-      })
+    const ai = getAiClient(apiKey);
+    if (!ai) throw new Error("AI 클라이언트 초기화에 실패했습니다.");
+
+    const data = await ai.models.generateContent({
+      model: modelName,
+      contents: [...conversationHistory, { role: "user", parts: userParts }],
+      systemInstruction: { parts: [{ text: getSystemInstruction(tone) }] },
+      generationConfig: { temperature: 0.9, maxOutputTokens: isEasterEggActive ? 16384 : 8192 },
+      tools: [{ googleSearch: {} }],
+      config: {
+        abortSignal: currentAbortController?.signal
+      }
     });
 
-    const data = await response.json();
-    
-    // Check for API errors specifically
-    if (data.error) {
-      throw new Error(data.error.message || "API 호출 단계에서 오류가 발생했습니다.");
+    const responseText = data?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!responseText) {
+      const reason = data?.candidates?.[0]?.finishReason;
+      let failMessage = data?.error?.message || data?.error?.status || "API 호출 단계에서 오류가 발생했습니다.";
+      if (reason && reason !== "STOP") {
+        failMessage = `답변을 생성할 수 없습니다. (이유: ${reason}). ${failMessage}`;
+      }
+      
+      if (!currentUser && isApiRetryPromptNeeded(failMessage)) {
+        openGuestApiModalForRetry();
+      }
+      throw new Error(failMessage);
     }
 
-    if (data.candidates && data.candidates[0].content) {
-       const aiContent = data.candidates[0].content;
-       conversationHistory.push({ role: "user", parts: userParts });
-       conversationHistory.push(aiContent);
-       const responseText = aiContent.parts[0].text;
-       
-       if (isConversationMode) {
-         liveAiResponse.innerText = responseText;
-         speakText(responseText);
-       } else {
-         let displayHtml = '';
-         if (mode === 'primary') {
-              displayHtml = marked.parse(responseText);
-         } else {
-              const latestExchange = `**나:** ${input}\n\n**Sophist:** ${responseText}`;
-              displayHtml = aiResponse.innerHTML + '<hr>' + marked.parse(latestExchange);
-         }
-         if (mode === 'primary') {
-              settingsPanel.classList.add('hidden');
-              inputPanel.classList.add('hidden');
-              convControls.classList.add('hidden');
-         }
-         aiResponse.innerHTML = displayHtml;
-         outputPanel.classList.remove('hidden');
-         if (continuationArea) continuationArea.classList.remove('hidden');
-         const scoreContainer = document.getElementById('logic-score-container');
-         if (scoreContainer) {
-           const baseScore = isEasterEggActive ? 10 : 60;
-           const score = Math.min(100, Math.max(10, Math.floor(baseScore + Math.random() * 30 + (input.length / 10))));
-           let scoreClass = 'score-mid';
-           let emoji = '😐';
-           if (score >= 85) { scoreClass = 'score-high'; emoji = '🔥'; }
-           else if (score <= 40) { scoreClass = 'score-low'; emoji = '🥶'; }
-           scoreContainer.innerHTML = `<div class="logic-score-badge ${scoreClass}">논리 강도 점수: ${score}점 ${emoji}</div>`;
-           scoreContainer.classList.remove('hidden');
-         }
-         if (currentUser) updateDailyUsage(currentUser.uid);
-         targetInputEle.value = '';
-         setTimeout(() => { outputPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
-       }
+    const aiContent = { parts: [{ text: responseText }] };
+    conversationHistory.push({ role: "user", parts: userParts });
+    conversationHistory.push(aiContent);
+
+    if (isConversationMode) {
+      liveAiResponse.innerText = responseText;
+      speakText(responseText);
+    } else {
+      let displayHtml = '';
+      if (mode === 'primary') {
+        displayHtml = marked.parse(responseText);
+      } else {
+        const latestExchange = `**나:** ${input}\n\n**Sophist:** ${responseText}`;
+        displayHtml = aiResponse.innerHTML + '<hr>' + marked.parse(latestExchange);
+      }
+      if (mode === 'primary') {
+        settingsPanel.classList.add('hidden');
+        inputPanel.classList.add('hidden');
+        convControls.classList.add('hidden');
+      }
+      aiResponse.innerHTML = displayHtml;
+      outputPanel.classList.remove('hidden');
+      if (continuationArea) continuationArea.classList.remove('hidden');
+      const scoreContainer = document.getElementById('logic-score-container');
+      if (scoreContainer) {
+        const baseScore = isEasterEggActive ? 10 : 60;
+        const score = Math.min(100, Math.max(10, Math.floor(baseScore + Math.random() * 30 + (input.length / 10))));
+        let scoreClass = 'score-mid';
+        let emoji = '😐';
+        if (score >= 85) { scoreClass = 'score-high'; emoji = '🔥'; }
+        else if (score <= 40) { scoreClass = 'score-low'; emoji = '🥶'; }
+        scoreContainer.innerHTML = `<div class="logic-score-badge ${scoreClass}">논리 강도 점수: ${score}점 ${emoji}</div>`;
+        scoreContainer.classList.remove('hidden');
+      }
+      if (currentUser) updateDailyUsage(currentUser.uid);
+      targetInputEle.value = '';
+      setTimeout(() => { outputPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
     }
-  } catch (err) { 
-    if (err.name !== 'AbortError') showError(err.message); 
+  } catch (err) {
+  if (err.name !== 'AbortError') {
+    if (!currentUser && isApiRetryPromptNeeded(err.message)) {
+      openGuestApiModalForRetry();
+    }
+    showError(err.message);
   }
-  finally { 
-    if (!isConversationMode) setLoading(false, mode); 
-    if (stopGenerationBtn) stopGenerationBtn.classList.add('hidden');
-    currentAbortController = null;
+  if (isConversationMode) {
+    liveStatusText.innerText = "오류가 발생했습니다.";
+    liveStatusText.style.color = "#f43f5e";
+    setTimeout(() => {
+      if (isConversationMode) {
+        liveStatusText.innerText = "Sophist가 듣고 있습니다...";
+        liveStatusText.style.color = "var(--text-secondary)";
+      }
+    }, 3000);
   }
+}
+finally {
+  if (!isConversationMode) setLoading(false, mode);
+  if (stopGenerationBtn) stopGenerationBtn.classList.add('hidden');
+  currentAbortController = null;
+}
 }
 
 // 4. AI Debate Arena
@@ -1397,7 +1671,7 @@ if (openDebateBtn) {
     debateSetup.classList.remove('hidden');
     debateArenaMain.classList.add('hidden');
   });
-  
+
   closeDebateBtn.addEventListener('click', () => {
     debateArena.classList.add('hidden');
   });
@@ -1422,7 +1696,7 @@ if (openDebateBtn) {
     const topic = document.getElementById('debate-topic').value.trim();
     if (!topic) return alert("토론 주제를 입력하세요.");
     if (!apiKeyInput.value) return alert("API 키가 필요합니다.");
-    
+
     debateState = {
       active: true,
       topic: topic,
@@ -1438,10 +1712,10 @@ if (openDebateBtn) {
     debateMessages.innerHTML = '';
     debateHumanInput.value = '';
     debateConclusion.classList.add('hidden');
-    
+
     debateSetup.classList.add('hidden');
     debateArenaMain.classList.remove('hidden');
-    
+
     // First bot starts
     triggerNextDebateSpeaker();
   });
@@ -1456,7 +1730,7 @@ if (openDebateBtn) {
   }
 
   debateNextBtn.addEventListener('click', triggerNextDebateSpeaker);
-  
+
   debateStopBtn.addEventListener('click', () => {
     debateState.active = false;
     debateArenaMain.classList.add('hidden');
@@ -1490,21 +1764,21 @@ if (openDebateBtn) {
     debateNextText.classList.add('hidden');
     debateNextBtn.disabled = true;
     debateConcludeBtn.disabled = true;
-    
+
     try {
       const prompt = `다음은 ' ${debateState.topic} ' 주제에 대해 진행된 AI들과 인간의 토론 내용입니다.\n\n[토론 내용]\n${debateState.history.join('\n\n')}\n\n이 토론을 종합적으로 분석하고, 최종적으로 결론을 도출하십시오(중립적인 요약 + 우세한 논리 요약).`;
-      
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelSelect.value}:generateContent?key=${apiKeyInput.value}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 2000 }
-        })
+
+      const ai = getAiClient(apiKeyInput.value);
+      if (!ai) throw new Error("AI 클라이언트 초기화에 실패했습니다.");
+
+      const data = await ai.models.generateContent({
+        model: modelSelect.value,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 2000 }
       });
-      const data = await response.json();
-      const text = data.candidates[0].content.parts[0].text;
-      
+      const text = data?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("결론을 생성할 수 없습니다.");
+
       debateConclusion.innerHTML = `<h3>토론 결론</h3>${marked.parse(text)}`;
       debateConclusion.classList.remove('hidden');
       debateState.active = false;
@@ -1525,7 +1799,7 @@ if (openDebateBtn) {
       debateState.currentSpeakerIndex = 0;
       debateState.currentRound++;
     }
-    
+
     if (debateState.currentRound > debateState.maxRounds) {
       return alert("모든 토론 라운드가 종료되었습니다. '결론 도출'을 눌러주세요.");
     }
@@ -1537,7 +1811,7 @@ if (openDebateBtn) {
     }
 
     const currentRole = debateState.roles[debateState.currentSpeakerIndex];
-    
+
     debateSpinner.classList.remove('hidden');
     debateNextText.classList.add('hidden');
     debateNextBtn.disabled = true;
@@ -1551,22 +1825,22 @@ if (openDebateBtn) {
         prompt += recentHistory + "\n\n위 직전 발언들의 논리적 허점을 철저히 공격하며 당신의 입장으로 반박하십시오. (인간의 개입이 있었다면 우선 인간의 발언부터 논파하십시오.) 짧게 2~3문단으로 끝내십시오.";
       }
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelSelect.value}:generateContent?key=${apiKeyInput.value}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          systemInstruction: { parts: [{ text: currentRole.system }] },
-          generationConfig: { temperature: 0.9, maxOutputTokens: 1000 }
-        })
+      const ai = getAiClient(apiKeyInput.value);
+      if (!ai) throw new Error("AI 클라이언트 초기화에 실패했습니다.");
+
+      const data = await ai.models.generateContent({
+        model: modelSelect.value,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: currentRole.system }] },
+        generationConfig: { temperature: 0.9, maxOutputTokens: 1000 }
       });
 
-      const data = await response.json();
-      const aiContent = data.candidates[0].content.parts[0].text;
-      
+      const aiContent = data?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!aiContent) throw new Error("발언을 생성할 수 없습니다.");
+
       addDebateMessage(currentRole.name, aiContent, currentRole.color);
       debateState.currentSpeakerIndex++;
-      
+
     } catch (e) {
       alert("발언 생성 오류: " + e.message);
     } finally {

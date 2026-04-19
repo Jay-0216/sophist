@@ -14,7 +14,7 @@
   <script type="importmap">
     {
       "imports": {
-        "@google/genai": "https://esm.run/@google/genai",
+        "@google/genai": "https://esm.run/@google/genai@1.50.1",
         "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
         "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
         "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
@@ -35,60 +35,59 @@
       <div class="header-top">
         <h1>Sophist</h1>
         <div class="header-actions">
-          <button id="leaderboard-btn" class="icon-btn" title="랜킹">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 20 18 10"/><polyline points="12 20 12 4"/><polyline points="6 20 6 14"/></svg>
-          </button>
-          <button id="theme-customizer-btn" class="icon-btn" title="테마 커스터마이저">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          <button id="theme-customizer-btn" class="icon-btn" title="테마 및 화면 설정 (다크/라이트 지원)">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path
+                d="M12 2A10 10 0 0 0 2 12a10 10 0 0 0 10 10c1.07 0 2-.9 2-2 0-.52-.22-1-.57-1.39a1.66 1.66 0 0 1-.43-1.61c.47-1.5 1.96-2.6 3.6-2.6H18a4 4 0 0 0 4-4c0-4.42-4.48-8-10-8z" />
+              <circle cx="7.5" cy="10.5" r="1.5" />
+              <circle cx="10.5" cy="6.5" r="1.5" />
+              <circle cx="14.5" cy="6.5" r="1.5" />
+              <circle cx="17.5" cy="10.5" r="1.5" />
+            </svg>
           </button>
           <button id="auth-header-btn" class="glass-btn small-btn">로그인</button>
-          <button id="theme-toggle" class="icon-btn" title="테마 변경">
-            <svg id="sun-icon" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <circle cx="12" cy="12" r="5"></circle>
-              <line x1="12" y1="1" x2="12" y2="3"></line>
-              <line x1="12" y1="21" x2="12" y2="23"></line>
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-              <line x1="1" y1="12" x2="3" y2="12"></line>
-              <line x1="21" y1="12" x2="23" y2="12"></line>
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-            </svg>
-            <svg id="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-            </svg>
-          </button>
         </div>
       </div>
-      <p>당신의 논리적 대변인</p>
+      <p style="pointer-events: none;">당신의 논리적 대변인</p>
     </header>
 
     <section class="glass-panel settings-panel">
       <div class="setting-group">
         <label for="model-select">지능 모델</label>
-        <select id="model-select">
-          <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
-          <option value="gemini-3-pro">Gemini 3 Pro</option>
-          <option value="gemini-3-flash">Gemini 3 Flash</option>
-          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-          <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (추천)</option>
-          <option value="gemini-2.0-pro-exp-02-05">Gemini 2.0 Pro</option>
-          <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash</option>
-          <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-          <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-        </select>
+        <div class="custom-select-container">
+          <div class="custom-select" id="custom-model-select">
+            <div class="custom-select-trigger"><span>Gemini 1.5 Flash (기본)</span></div>
+            <div class="custom-options">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+          <select id="model-select" class="hidden-select">
+            <!-- Options dynamically loaded by JS -->
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (기본)</option>
+          </select>
+        </div>
       </div>
       <div class="setting-group">
         <label for="tone-select">대응 스타일</label>
-        <select id="tone-select">
-          <option value="gentle">부드럽게 설득하듯이</option>
-          <option value="critical" selected>상대의 말을 비판하면서</option>
-          <option value="sarcastic">약간 비꼬듯이</option>
-          <option value="emotional">감정적으로 상대를 설득</option>
-          <option value="nerd">덕후처럼 열심히 설명을 늘어놓음</option>
-        </select>
+        <div class="custom-select-container">
+          <div class="custom-select" id="custom-tone-select">
+            <div class="custom-select-trigger"><span>상대의 말을 비판하면서</span></div>
+            <div class="custom-options">
+              <span class="custom-option" data-value="gentle">부드럽게 설득하듯이</span>
+              <span class="custom-option selected" data-value="critical">상대의 말을 비판하면서</span>
+              <span class="custom-option" data-value="sarcastic">약간 비꼬듯이</span>
+              <span class="custom-option" data-value="emotional">감정적으로 상대를 설득</span>
+              <span class="custom-option" data-value="nerd">덕후처럼 열심히 설명을 늘어놓음</span>
+            </div>
+          </div>
+          <select id="tone-select" class="hidden-select">
+            <option value="gentle">부드럽게 설득하듯이</option>
+            <option value="critical" selected>상대의 말을 비판하면서</option>
+            <option value="sarcastic">약간 비꼬듯이</option>
+            <option value="emotional">감정적으로 상대를 설득</option>
+            <option value="nerd">덕후처럼 열심히 설명을 늘어놓음</option>
+          </select>
+        </div>
       </div>
 
       <!-- API Key group removed from here, moving to settings/sidebar -->
@@ -97,7 +96,7 @@
 
     <!-- 대화 연동 모드 -->
     <div class="conversation-mode-controls">
-      <button id="conv-mode-btn" class="primary-btn pulse">대화 연동 모드 시작 (웹캠/마이크 연결)</button>
+      <button id="conv-mode-btn" class="primary-btn pulse">LIVE 모드 시작 (웹캠/마이크 연결)</button>
       <button id="conv-stop-btn" class="secondary-btn hidden">대화 중지</button>
     </div>
 
@@ -163,13 +162,14 @@
       <div class="output-header">
         <h2 id="output-panel-title">Sophist의 반박</h2>
         <button id="tts-btn" class="icon-btn" title="답변 읽어주기">
-          <svg id="tts-icon-play" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
+          <svg id="tts-icon-play" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
             <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
             <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
           </svg>
-          <svg id="tts-icon-stop" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none">
+          <svg id="tts-icon-stop" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"
+            stroke="none">
             <rect x="6" y="6" width="12" height="12"></rect>
           </svg>
         </button>
@@ -200,7 +200,9 @@
         </div>
         <div class="output-actions-right">
           <button id="stop-generation-btn" class="glass-btn small-btn danger-btn hidden">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+            </svg>
             생성 중지
           </button>
           <button id="copy-btn" class="glass-btn small-btn">
@@ -236,6 +238,12 @@
         </div>
       </div>
     </section>
+
+    <!-- Global Progress/Status Indicator -->
+    <div id="global-status-bar" class="status-bar hidden">
+      <div class="status-spinner"></div>
+      <span id="global-status-text">Sophist가 논리를 구성하고 있습니다...</span>
+    </div>
   </main>
 
   <!-- Gemini Live Style Overlay -->
@@ -307,11 +315,33 @@
       <h2>내 대화 기록</h2>
       <button id="close-sidebar-btn" class="icon-btn">&times;</button>
     </div>
-    <div class="user-profile-sidebar" id="user-profile-sidebar">
+    <div class="user-profile-sidebar" id="user-profile-sidebar" title="프로필 및 API 키 설정">
       <div class="user-avatar">👤</div>
       <div class="user-details">
         <div id="sidebar-nickname" class="nickname-text">사용자</div>
         <div id="sidebar-email" class="email-text">example@email.com</div>
+      </div>
+    </div>
+    <div id="sidebar-api-area" class="sidebar-api-area glass-panel">
+      <div id="gemini-api-group">
+        <div class="label-with-help">
+          <label for="api-key-input">Gemini API 키</label>
+          <button type="button" id="api-help-btn" class="help-circle">?</button>
+        </div>
+        <input type="password" id="api-key-input" placeholder="Gemini API 키를 입력해주세요">
+      </div>
+      <div class="save-key-row">
+        <label class="toggle-container small">
+          <input type="checkbox" id="save-api-key">
+          <span class="toggle-text">API 키 기억하기 (암호화)</span>
+        </label>
+      </div>
+      <div id="api-instructions" class="help-box hidden">
+        <h3>Gemini API 키 발급</h3>
+        <ol>
+          <li><a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a> 접속</li>
+          <li>'Get API key' 클릭</li>
+        </ol>
       </div>
     </div>
     <div class="sidebar-content">
@@ -320,35 +350,10 @@
         <p class="empty-state">저장된 기록이 없습니다.</p>
       </div>
 
-      <div class="sidebar-settings">
-        <p class="sidebar-section-title">사용자 설정</p>
-        <div class="setting-group api-key-group">
-          <div class="label-with-help">
-            <label for="api-key-input">Gemini API 키</label>
-            <button type="button" id="api-help-btn" class="help-circle">?</button>
-          </div>
-          <input type="password" id="api-key-input" placeholder="성능 향상을 위해 API 키를 입력하세요">
-          <div class="save-key-row">
-            <label class="toggle-container small">
-              <input type="checkbox" id="save-api-key">
-              <span class="toggle-text">API 키 기억하기 (암호화)</span>
-            </label>
-          </div>
-          <div id="api-instructions" class="help-box hidden">
-             <h3>API 키 발급 방법</h3>
-             <ol>
-               <li><a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a> 접속</li>
-               <li>'Get API key' 클릭</li>
-               <li>'Create API key' 클릭 후 복사</li>
-             </ol>
-          </div>
-        </div>
-      </div>
-
-      <button id="logout-btn" class="secondary-btn logout-btn">로그인 정보 초기화 및 로그아웃</button>
+      <button id="logout-btn" class="secondary-btn logout-btn">로그아웃</button>
     </div>
   </div>
-  <div id="sidebar-overlay" class="hidden"></div>
+  
 
   <!-- Leaderboard Modal -->
   <div id="leaderboard-modal" class="modal hidden">
@@ -500,12 +505,94 @@
         <button id="guest-api-yes-btn" class="primary-btn">네, 사용하겠습니다</button>
         <button id="guest-api-no-btn" class="secondary-btn">아니오</button>
       </div>
-      <div id="guest-api-input-area" class="hidden" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+      <div id="guest-api-input-area" class="hidden"
+        style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
         <div class="setting-group">
           <label>Gemini API 키 입력</label>
           <input type="password" id="guest-api-key-input" placeholder="AI 사용을 위해 API 키를 입력하세요">
         </div>
         <button id="guest-api-save-btn" class="primary-btn">키 저장 및 적용</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key Error Modal -->
+  <div id="api-error-modal" class="modal hidden">
+    <div class="modal-content glass-panel" style="max-width: 450px;">
+      <div class="modal-header">
+        <h2 style="color: #f43f5e;">⚠️ API 키 오류</h2>
+        <button id="close-api-error-btn" class="icon-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 1rem; color: var(--text-secondary); line-height: 1.5;">
+          Gemini와 대화하려면 API 키가 필요합니다.
+          키가 없거나 유효하지 않아 응답을 생성할 수 없습니다.
+        </p>
+        <div class="setting-group">
+          <label>API 키 입력</label>
+          <input type="password" id="modal-api-key-input" placeholder="API 키를 여기에 입력하세요" style="margin-top: 0.5rem;">
+        </div>
+        <div class="save-key-row" style="margin-top: 0.75rem;">
+          <label class="toggle-container small">
+            <input type="checkbox" id="modal-save-api-key">
+            <span class="toggle-text">API 키 기억하기</span>
+          </label>
+        </div>
+        <button id="api-save-retry-btn" class="primary-btn" style="margin-top: 1.5rem;">저장 및 다시 시도</button>
+        <p style="font-size: 0.8rem; margin-top: 1rem; text-align: center; color: var(--text-secondary);">
+          키가 없다면 <a href="https://aistudio.google.com/" target="_blank" style="color: var(--accent);">여기서 무료로 발급</a>
+          받으세요.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Model Selection Modal -->
+  <div id="live-model-modal" class="modal hidden">
+    <div class="modal-content glass-panel" style="max-width: 520px;">
+      <div class="modal-header">
+        <h2>LIVE 모델 선택</h2>
+        <button id="live-model-close-btn" class="icon-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>LIVE 모드 진입 전에 사용할 Gemini LIVE 전용 모델을 선택하세요.</p>
+        <div class="setting-group">
+          <label for="live-model-select">LIVE 전용 모델</label>
+          <div class="custom-select-container">
+            <div class="custom-select" id="custom-live-model-select">
+              <div class="custom-select-trigger"><span>모델 선택...</span></div>
+              <div class="custom-options">
+                <!-- live models are populated dynamically -->
+              </div>
+            </div>
+            <select id="live-model-select" class="hidden-select">
+              <!-- live models are populated dynamically -->
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+        <button id="live-model-confirm-btn" class="primary-btn">LIVE 시작</button>
+        <button id="live-model-cancel-btn" class="secondary-btn">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Busy/Overload Modal -->
+  <div id="busy-modal" class="modal hidden">
+    <div class="modal-content glass-panel" style="max-width: 450px; text-align: center;">
+      <div class="modal-header" style="justify-content: center;">
+        <h2 style="color: var(--accent);">🛑 모델 사용량 과부화</h2>
+      </div>
+      <div class="modal-body" style="padding: 1rem 0;">
+        <div class="busy-icon" style="font-size: 3rem; margin-bottom: 1.5rem;">⏳</div>
+        <p style="margin-bottom: 1.5rem; color: var(--text-secondary); line-height: 1.6;">
+          현재 사용자가 너무 많아 기상천외한 답변을 생성하는 데 시간이 걸리고 있습니다.<br>
+          <strong>잠시 후 다시 시도 버튼을 눌러주세요.</strong>
+        </p>
+        <button id="busy-retry-btn" class="primary-btn" style="width: 100%;">다시 시도하기</button>
+        <button id="busy-close-btn" class="secondary-btn"
+          style="width: 100%; margin-top: 0.75rem; background: transparent; border: 1px solid rgba(255,255,255,0.1);">닫기</button>
       </div>
     </div>
   </div>
@@ -523,7 +610,7 @@
       }
     });
   </script>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=launch_debug_v2"></script>
 </body>
 
 </html>

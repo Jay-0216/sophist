@@ -1,6 +1,5 @@
 {
   "hosting": {
-    "site": "sophist-c1b46",
     "public": ".",
     "ignore": [
       "firebase.json",
