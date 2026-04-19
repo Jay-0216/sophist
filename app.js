@@ -304,24 +304,26 @@ saveApiKeyCheck.addEventListener('change', () => {
   }
 });
 
-// --- Gemini Model Selection ---
+// ⚠️ 이 Gemini 모델 목록은 절대 변경 금지 (사용자 지시)
 const GEMINI_MODELS = [
-  { value: 'gemini-flash-latest', text: 'Gemini Flash Latest' },
-  { value: 'gemini-flash-lite-latest', text: 'Gemini Flash-Lite Latest' },
-  { value: 'gemini-pro-latest', text: 'Gemini Pro Latest' },
-  { value: 'gemini-2.5-flash', text: 'Gemini 2.5 Flash' },
-  { value: 'gemini-2.5-pro', text: 'Gemini 2.5 Pro' },
-  { value: 'gemini-3-pro-preview', text: 'Gemini 3 Pro Preview' },
-  { value: 'gemini-3-flash-preview', text: 'Gemini 3 Flash Preview' },
-  { value: 'gemini-3.1-pro-preview', text: 'Gemini 3.1 Pro Preview' },
-  { value: 'gemini-3.1-flash-lite-preview', text: 'Gemini 3.1 Flash Lite Preview' }
+  { value: 'gemini-flash-latest', text: '⚡ Flash Latest — 가장 빠른 최신 버전' },
+  { value: 'gemini-flash-lite-latest', text: '🪶 Flash-Lite Latest — 초경량, 단순 작업에 최적' },
+  { value: 'gemini-pro-latest', text: '💎 Pro Latest — 고품질, 복잡한 추론에 강함' },
+  { value: 'gemini-2.5-flash', text: '⚡ 2.5 Flash — 최신 경량, 빠른 응답' },
+  { value: 'gemini-2.5-pro', text: '💎 2.5 Pro — 최신 고성능, 논리·코딩 최강' },
+  { value: 'gemini-3-pro-preview', text: '🔮 3 Pro Preview — 차세대 모델 프리뷰' },
+  { value: 'gemini-3-flash-preview', text: '🔮 3 Flash Preview — 차세대 빠른 프리뷰' },
+  { value: 'gemini-3.1-pro-preview', text: '🚀 3.1 Pro Preview — 최첨단 실험적 최강' },
+  { value: 'gemini-3.1-flash-lite-preview', text: '🚀 3.1 Flash Lite Preview — 최첨단 초경량' }
 ];
 
+// ⚠️ NVIDIA 모델 목록 (공식 model ID 기준)
 const NVIDIA_MODELS = [
-  { value: 'meta/llama-3.1-70b-instruct', text: 'Llama 3.1 70B Instruct' },
-  { value: 'meta/llama-3.1-8b-instruct', text: 'Llama 3.1 8B Instruct' },
-  { value: 'nvidia/llama-3.1-nemotron-70b-instruct', text: 'Nemotron-70B Instruct' },
-  { value: 'mistralai/mixtral-8x22b-instruct-v0.1', text: 'Mixtral 8x22B Instruct' }
+  { value: 'meta/llama-3.3-70b-instruct', text: '🏆 Llama 3.3 70B — 현재 최고 성능, 긴 문맥 이해' },
+  { value: 'meta/llama-3.1-405b-instruct', text: '🌌 Llama 3.1 405B — 사실상 최대 규모, 느리지만 가장 스마트' },
+  { value: 'meta/llama-3.1-70b-instruct', text: '⚡ Llama 3.1 70B — 안정적이고 빠른 균형형' },
+  { value: 'nvidia/llama-3.1-nemotron-70b-instruct', text: '🔬 Nemotron-70B — NVIDIA 특화 튜닝, 과학·기술 강점' },
+  { value: 'mistralai/mistral-large-2-instruct', text: '🌐 Mistral Large 2 — 유럽산 모델, 다국어·창의성 강점' }
 ];
 
 const NORMAL_GEMINI_MODELS = GEMINI_MODELS.filter(m => !/tts/i.test(m.value));

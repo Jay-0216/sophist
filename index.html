@@ -53,18 +53,18 @@
 
     <section class="glass-panel settings-panel">
       <div class="setting-group" id="provider-setting-group">
-        <label for="provider-select">AI 제공자 (Provider)</label>
+        <label for="provider-select">AI 제공자</label>
         <div class="custom-select-container">
           <div class="custom-select" id="custom-provider-select">
-            <div class="custom-select-trigger"><span>Gemini (API 키 필요)</span></div>
+            <div class="custom-select-trigger"><span>⚡ NVIDIA (무료 AI 서비스)</span></div>
             <div class="custom-options">
-              <span class="custom-option selected" data-value="gemini">Gemini (API 키 필요)</span>
-              <span class="custom-option" data-value="nvidia">NVIDIA NIM (무료 프록시 서버)</span>
+              <span class="custom-option" data-value="gemini">🔑 Gemini (API 키 필요)</span>
+              <span class="custom-option selected" data-value="nvidia">⚡ NVIDIA (무료 AI 서비스)</span>
             </div>
           </div>
           <select id="provider-select" class="hidden-select">
-            <option value="gemini" selected>Gemini (API 키 필요)</option>
-            <option value="nvidia">NVIDIA NIM (무료 프록시 서버)</option>
+            <option value="gemini">Gemini (API 키 필요)</option>
+            <option value="nvidia" selected>NVIDIA (무료 AI 서비스)</option>
           </select>
         </div>
       </div>
@@ -72,14 +72,14 @@
         <label for="model-select">지능 모델</label>
         <div class="custom-select-container">
           <div class="custom-select" id="custom-model-select">
-            <div class="custom-select-trigger"><span>Gemini 1.5 Flash (기본)</span></div>
+            <div class="custom-select-trigger"><span>🏆 Llama 3.3 70B — 현재 최고 성능, 긴 문맥 이해</span></div>
             <div class="custom-options">
               <!-- Dynamically populated -->
             </div>
           </div>
           <select id="model-select" class="hidden-select">
             <!-- Options dynamically loaded by JS -->
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (기본)</option>
+            <option value="meta/llama-3.3-70b-instruct">🏆 Llama 3.3 70B — 현재 최고 성능, 긴 문맥 이해</option>
           </select>
         </div>
       </div>
