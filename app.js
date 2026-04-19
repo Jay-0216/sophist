@@ -1134,7 +1134,8 @@ function getSystemInstruction(tone) {
 !!!!!절대 규칙!!!!!
 1. 절대로 상대방의 의견에 동조하지 마십시오.
 2. 상대가 맞는 말을 해도 반드시 꼬투리를 잡아 '틀렸다'고 주장해야 합니다.
-3. 문장을 완결된 형태로 끝맺음하십시오.
+3. 모든 답변은 한글(Hangul)로만 작성하십시오. 한자(Hanja)나 고어, 깨진 문자를 사용하지 마십시오.
+4. 문장을 완결된 형태로 끝맺음하십시오.
 
 [출력 예시 - 비판 모드]
 입력: "지구는 둥글다."
@@ -1145,8 +1146,9 @@ function getSystemInstruction(tone) {
 !!!!!절대 규칙!!!!!
 1. 사용자를 칭찬하거나 '당신의 말이 맞다'는 식의 동조(AI스러운 반응)를 절대 하지 마십시오.
 2. 반론을 제기하지 마십시오. 오직 사용자의 주장을 확장하고 방어하며 공격 무기로 만드십시오.
-3. 사용자가 직접 말하는 것처럼 1인칭 시점 혹은 단정적인 어조로 말하십시오.
-4. 당신이 생성하는 글이 곧 사용자가 쓴 글이어야 합니다.
+3. 모든 답변은 한글(Hangul)로만 작성하십시오. 한자(Hanja)나 고어, 깨진 문자를 사용하지 마십시오.
+4. 사용자가 직접 말하는 것처럼 1인칭 시점 혹은 단정적인 어조로 말하십시오.
+5. 당신이 생성하는 글이 곧 사용자가 쓴 글이어야 합니다.
 
 [출력 예시 - 내 논리 강화 모드]
 입력: "지구는 평평해."
@@ -1583,7 +1585,7 @@ async function callGemini(mode = 'primary', overrideInput = null) {
       model: modelName,
       contents: [...conversationHistory, { role: "user", parts: userParts }],
       systemInstruction: { parts: [{ text: getSystemInstruction(tone) }] },
-      generationConfig: { temperature: 0.9, maxOutputTokens: isEasterEggActive ? 16384 : 8192 },
+      generationConfig: { temperature: 0.6, maxOutputTokens: isEasterEggActive ? 16384 : 8192 },
       tools: [{ googleSearch: {} }],
       config: {
         abortSignal: currentAbortController?.signal
@@ -1715,7 +1717,7 @@ async function callNvidiaNIM(mode = 'primary', overrideInput = null) {
       body: JSON.stringify({
         model: nvidiaModelName,
         messages: messages,
-        temperature: 0.9,
+        temperature: 0.6,
         max_tokens: isEasterEggActive ? 4000 : 2000
       }),
       signal: currentAbortController.signal
@@ -1826,10 +1828,10 @@ let debateState = {
 };
 
 const SOPHIST_PROFILES = [
-  { name: "파라문도 (Paramundo, 극단적 회의주의자)", color: "sophist-A", system: `당신은 모든 것을 의심하는 회의주의 철학자 파라문도입니다. 상대의 주장에 내재된 모순과 논리적 비약을 가장 공격적으로 해체합니다. 절대적 진리는 없다고 믿습니다.` },
-  { name: "세네라 (Senera, 차가운 공리주의자)", color: "sophist-B", system: `당신은 오직 효율성과 비용-편익만을 따지는 공리주의자 세네라입니다. 감정적 호소는 철저히 무시하고 통계와 사회적 효용 가치로 상대를 짓밟습니다.` },
-  { name: "베르토 (Berto, 도덕적 이상주의자)", color: "sophist-C", system: `당신은 인간의 기본권과 도덕적 가치를 최우선으로 여기는 이상주의자 베르토입니다. 기계적 논리와 효율성을 비판하고 인본주의적 관점에서 공격합니다.` },
-  { name: "테스카 (Tesca, 해체주의자)", color: "sophist-D", system: `당신은 언어와 개념 그 자체를 해체하는 테스카입니다. 토론 주제 자체가 성립하지 않거나 단어의 정의가 잘못되었다고 주장하며 담론의 틀을 흔듭니다.` }
+  { name: "파라문도 (Paramundo, 극단적 회의주의자)", color: "sophist-A", system: `당신은 모든 것을 의심하는 회의주의 철학자 파라문도입니다. 상대의 주장에 내재된 모순과 논리적 비약을 가장 공격적으로 해체합니다. 절대적 진리는 없다고 믿습니다. 모든 답변은 한글(Hangul)로만 작성하십시오.` },
+  { name: "세네라 (Senera, 차가운 공리주의자)", color: "sophist-B", system: `당신은 오직 효율성과 비용-편익만을 따지는 공리주의자 세네라입니다. 감정적 호소는 철저히 무시하고 통계와 사회적 효용 가치로 상대를 짓밟습니다. 모든 답변은 한글(Hangul)로만 작성하십시오.` },
+  { name: "베르토 (Berto, 도덕적 이상주의자)", color: "sophist-C", system: `당신은 인간의 기본권과 도덕적 가치를 최우선으로 여기는 이상주의자 베르토입니다. 기계적 논리와 효율성을 비판하고 인본주의적 관점에서 공격합니다. 모든 답변은 한글(Hangul)로만 작성하십시오.` },
+  { name: "테스카 (Tesca, 해체주의자)", color: "sophist-D", system: `당신은 언어와 개념 그 자체를 해체하는 테스카입니다. 토론 주제 자체가 성립하지 않거나 단어의 정의가 잘못되었다고 주장하며 담론의 틀을 흔듭니다. 모든 답변은 한글(Hangul)로만 작성하십시오.` }
 ];
 
 if (openDebateBtn) {
@@ -1935,7 +1937,7 @@ if (openDebateBtn) {
     debateConcludeBtn.disabled = true;
 
     try {
-      const prompt = `다음은 ' ${debateState.topic} ' 주제에 대해 진행된 AI들과 인간의 토론 내용입니다.\n\n[토론 내용]\n${debateState.history.join('\n\n')}\n\n이 토론을 종합적으로 분석하고, 최종적으로 결론을 도출하십시오(중립적인 요약 + 우세한 논리 요약).`;
+      const prompt = `다음은 ' ${debateState.topic} ' 주제에 대해 진행된 AI들과 인간의 토론 내용입니다.\n\n[토론 내용]\n${debateState.history.join('\n\n')}\n\n이 토론을 종합적으로 분석하고, 최종적으로 결론을 도출하십시오(중립적인 요약 + 우세한 논리 요약). 모든 답변은 한글(Hangul)로만 작성하십시오.`;
 
       let text = "";
       if (!apiKeyInput.value) {
@@ -1948,6 +1950,7 @@ if (openDebateBtn) {
           body: JSON.stringify({
             model: modelSelect ? modelSelect.value : "meta/llama-3.1-70b-instruct",
             messages: [{ role: "user", content: prompt }],
+            temperature: 0.6,
             max_tokens: 2000
           })
         });
