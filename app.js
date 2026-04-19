@@ -316,13 +316,29 @@ const GEMINI_MODELS = [
   { value: 'gemini-3.1-pro-preview', text: 'Gemini 3.1 Pro Preview' },
   { value: 'gemini-3.1-flash-lite-preview', text: 'Gemini 3.1 Flash Lite Preview' }
 ];
+
+const NVIDIA_MODELS = [
+  { value: 'meta/llama-3.1-70b-instruct', text: 'Llama 3.1 70B Instruct' },
+  { value: 'meta/llama-3.1-8b-instruct', text: 'Llama 3.1 8B Instruct' },
+  { value: 'nvidia/llama-3.1-nemotron-70b-instruct', text: 'Nemotron-70B Instruct' },
+  { value: 'mistralai/mixtral-8x22b-instruct-v0.1', text: 'Mixtral 8x22B Instruct' }
+];
+
 const NORMAL_GEMINI_MODELS = GEMINI_MODELS.filter(m => !/tts/i.test(m.value));
 const LIVE_GEMINI_MODELS = NORMAL_GEMINI_MODELS;
 let currentModelMode = 'normal';
 
 function updateModelOptions(mode = 'normal') {
   currentModelMode = mode;
-  const models = mode === 'live' ? LIVE_GEMINI_MODELS : NORMAL_GEMINI_MODELS;
+  const providerSelect = document.getElementById('provider-select');
+  const isNvidia = providerSelect && providerSelect.value === 'nvidia';
+  
+  let models = [];
+  if (isNvidia) {
+    models = NVIDIA_MODELS;
+  } else {
+    models = mode === 'live' ? LIVE_GEMINI_MODELS : NORMAL_GEMINI_MODELS;
+  }
   const allowedModels = models.length > 0 ? models : NORMAL_GEMINI_MODELS;
 
   if (modelSelect) {
@@ -407,11 +423,20 @@ try {
   };
 
   window.syncAllCustomDropdowns = () => {
+    syncCustomDropdown('custom-provider-select', 'provider-select');
     syncCustomDropdown('custom-tone-select', 'tone-select');
     syncCustomDropdown('custom-model-select', 'model-select');
   };
 
   const customToneSelect = document.getElementById('custom-tone-select');
+  const customProviderSelect = document.getElementById('custom-provider-select');
+
+  initCustomDropdown(customProviderSelect, 'provider-select', (value) => {
+    const hiddenSelect = document.getElementById('provider-select');
+    if (hiddenSelect) hiddenSelect.value = value;
+    updateModelOptions(); // dynamically swap options and update model select
+    if (currentUser) saveUserData(currentUser.uid);
+  });
 
   initCustomDropdown(customModelSelect, 'model-select', (value) => {
     if (modelSelect) modelSelect.value = value;
@@ -427,7 +452,7 @@ try {
   syncAllCustomDropdowns();
 
   document.addEventListener('click', () => {
-    [customModelSelect, customToneSelect].forEach(container => {
+    [customProviderSelect, customModelSelect, customToneSelect].forEach(container => {
       if (container) container.classList.remove('open');
     });
   });
@@ -1514,20 +1539,25 @@ async function callGemini(mode = 'primary', overrideInput = null) {
   const modelName = modelSelect.value;
   const tone = toneSelect.value;
 
-  if (!apiKey) {
+  const providerSelect = document.getElementById('provider-select');
+  if (providerSelect && providerSelect.value === 'nvidia') {
     if (!CLOUDFLARE_WORKER_URL || CLOUDFLARE_WORKER_URL === "YOUR_CLOUDFLARE_WORKER_URL_HERE") {
-        if (!currentUser) {
-          guestApiModal.classList.remove('hidden');
-          guestApiInputArea.classList.add('hidden');
-        } else {
-          showError("안전한 무료 프록시 서버 URL이 설정되지 않았습니다. API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
-          historySidebar.classList.remove('hidden');
-          sidebarOverlay.classList.remove('hidden');
-        }
-        return;
+      showError("안전한 무료 프록시 서버 URL이 설정되지 않았습니다. 문서(cloudflare_worker_setup.md)를 확인하세요.");
+      return;
     }
-    // 프록시 URL이 등록되어 있고 사용자가 입력하지 않았다면 NVIDIA NIM 호출 모드로 전환
     return callNvidiaNIM(mode, overrideInput);
+  }
+
+  if (!apiKey) {
+    if (!currentUser) {
+      guestApiModal.classList.remove('hidden');
+      guestApiInputArea.classList.add('hidden');
+    } else {
+      showError("API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
+      historySidebar.classList.remove('hidden');
+      sidebarOverlay.classList.remove('hidden');
+    }
+    return;
   }
 
   // Proceed with existing callGemini logic (duplicated here for flow)
@@ -1645,7 +1675,7 @@ async function callNvidiaNIM(mode = 'primary', overrideInput = null) {
   const input = overrideInput || (targetInputEle ? targetInputEle.value.trim() : "");
   const tone = toneSelect.value;
   // NVIDIA NIM에서 사용할 모델 설정 (예: llama 3.1)
-  const nvidiaModelName = "meta/llama-3.1-70b-instruct"; 
+  const nvidiaModelName = modelSelect ? modelSelect.value : "meta/llama-3.1-70b-instruct";
 
   if (!input && !currentBase64) return;
   if (!isConversationMode) setLoading(true, mode);
