@@ -111,9 +111,10 @@ const SPEECH_RECOGNITION_SENSITIVITY = 1000; // 1초 침묵 시 자동 종료
 let currentAbortController = null; // For stopping generation
 let currentAiSpeechText = ""; // To prevent echo self-interruption
 
-// --- Option A: 내장(하드코딩) NVIDIA API 키 설정 ---
-// 사용자가 API 키를 입력하지 않았을 때 사용할 NVIDIA의 기본(무제한) API 키를 아래에 입력하세요.
-const FALLBACK_NVIDIA_API_KEY = "YOUR_NVIDIA_API_KEY_HERE";
+// --- Option B: 무료 보안 서버 (Cloudflare Workers) 연동 설정 ---
+// 아래 주소에 Cloudflare에서 발급받은 워커 URL(예: https://my-worker.아이디.workers.dev)을 넣으세요.
+// 아직 URL이 없다면, 우측 문서(cloudflare_worker_setup.md)를 참고해 발급받으세요.
+const CLOUDFLARE_WORKER_URL = "YOUR_CLOUDFLARE_WORKER_URL_HERE";
 
 // --- API Key Security Logic ---
 const STORAGE_KEY = 'sophist_encrypted_api_key';
@@ -1514,18 +1515,18 @@ async function callGemini(mode = 'primary', overrideInput = null) {
   const tone = toneSelect.value;
 
   if (!apiKey) {
-    if (!FALLBACK_NVIDIA_API_KEY || FALLBACK_NVIDIA_API_KEY === "YOUR_NVIDIA_API_KEY_HERE") {
+    if (!CLOUDFLARE_WORKER_URL || CLOUDFLARE_WORKER_URL === "YOUR_CLOUDFLARE_WORKER_URL_HERE") {
         if (!currentUser) {
           guestApiModal.classList.remove('hidden');
           guestApiInputArea.classList.add('hidden');
         } else {
-          showError("기본 서버 API 키가 설정되지 않았습니다. API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
+          showError("안전한 무료 프록시 서버 URL이 설정되지 않았습니다. API 키를 입력해주세요. 사이드바 '사용자 설정'에서 입력 가능합니다.");
           historySidebar.classList.remove('hidden');
           sidebarOverlay.classList.remove('hidden');
         }
         return;
     }
-    // 기본 키가 등록되어 있고 사용자가 입력하지 않았다면 NVIDIA NIM 호출 모드로 전환
+    // 프록시 URL이 등록되어 있고 사용자가 입력하지 않았다면 NVIDIA NIM 호출 모드로 전환
     return callNvidiaNIM(mode, overrideInput);
   }
 
@@ -1676,10 +1677,9 @@ async function callNvidiaNIM(mode = 'primary', overrideInput = null) {
     }
     messages.push({ role: "user", content: userContent });
 
-    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+    const response = await fetch(CLOUDFLARE_WORKER_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${FALLBACK_NVIDIA_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -1832,8 +1832,8 @@ if (openDebateBtn) {
   startDebateBtn.addEventListener('click', () => {
     const topic = document.getElementById('debate-topic').value.trim();
     if (!topic) return alert("토론 주제를 입력하세요.");
-    if (!apiKeyInput.value && (!FALLBACK_NVIDIA_API_KEY || FALLBACK_NVIDIA_API_KEY === "YOUR_NVIDIA_API_KEY_HERE")) {
-      return alert("API 키가 필요합니다 (기본 키가 설정되지 않음).");
+    if (!apiKeyInput.value && (!CLOUDFLARE_WORKER_URL || CLOUDFLARE_WORKER_URL === "YOUR_CLOUDFLARE_WORKER_URL_HERE")) {
+      return alert("API 키가 필요합니다 (안전한 무료 프록시 서버가 설정되지 않음).");
     }
 
     debateState = {
@@ -1909,11 +1909,10 @@ if (openDebateBtn) {
 
       let text = "";
       if (!apiKeyInput.value) {
-        // NVIDIA NIM 사용
-        const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        // NVIDIA NIM 우회 (Cloudflare) 사용
+        const response = await fetch(CLOUDFLARE_WORKER_URL, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${FALLBACK_NVIDIA_API_KEY}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
@@ -1987,11 +1986,10 @@ if (openDebateBtn) {
 
       let aiContent = "";
       if (!apiKeyInput.value) {
-        // NVIDIA NIM 사용
-        const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        // NVIDIA NIM 우회 (Cloudflare) 사용
+        const response = await fetch(CLOUDFLARE_WORKER_URL, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${FALLBACK_NVIDIA_API_KEY}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
