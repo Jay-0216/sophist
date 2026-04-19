@@ -114,7 +114,7 @@ let currentAiSpeechText = ""; // To prevent echo self-interruption
 // --- Option B: 무료 보안 서버 (Cloudflare Workers) 연동 설정 ---
 // 아래 주소에 Cloudflare에서 발급받은 워커 URL(예: https://my-worker.아이디.workers.dev)을 넣으세요.
 // 아직 URL이 없다면, 우측 문서(cloudflare_worker_setup.md)를 참고해 발급받으세요.
-const CLOUDFLARE_WORKER_URL = "YOUR_CLOUDFLARE_WORKER_URL_HERE";
+const CLOUDFLARE_WORKER_URL = "https://sophist.jayjaywhy0216.workers.dev/";
 
 // --- API Key Security Logic ---
 const STORAGE_KEY = 'sophist_encrypted_api_key';
