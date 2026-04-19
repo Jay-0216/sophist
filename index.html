@@ -52,6 +52,22 @@
     </header>
 
     <section class="glass-panel settings-panel">
+      <div class="setting-group" id="provider-setting-group">
+        <label for="provider-select">AI 제공자 (Provider)</label>
+        <div class="custom-select-container">
+          <div class="custom-select" id="custom-provider-select">
+            <div class="custom-select-trigger"><span>Gemini (API 키 필요)</span></div>
+            <div class="custom-options">
+              <span class="custom-option selected" data-value="gemini">Gemini (API 키 필요)</span>
+              <span class="custom-option" data-value="nvidia">NVIDIA NIM (무료 프록시 서버)</span>
+            </div>
+          </div>
+          <select id="provider-select" class="hidden-select">
+            <option value="gemini" selected>Gemini (API 키 필요)</option>
+            <option value="nvidia">NVIDIA NIM (무료 프록시 서버)</option>
+          </select>
+        </div>
+      </div>
       <div class="setting-group">
         <label for="model-select">지능 모델</label>
         <div class="custom-select-container">
@@ -309,7 +325,8 @@
     </div>
   </div>
 
-  <!-- History Sidebar -->
+  <!-- History Sidebar and Overlay -->
+  <div id="sidebar-overlay" class="hidden"></div>
   <div id="history-sidebar" class="sidebar hidden">
     <div class="sidebar-header">
       <h2>내 대화 기록</h2>
